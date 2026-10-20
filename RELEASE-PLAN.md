@@ -127,8 +127,8 @@ the saves.
 The toolkit makes six Xbox hard-disk images in the save folder on every start
 (`vendor/xboxrecomp/src/kernel/kernel_path.c`, the POSIX branch of
 `xbox_path_init`): `Partition0.img` (the partition table), `Partition1.img`
-2,362,982,400 bytes, `Partition2.img` 512,000,000, `Partition3` to `5`
-786,432,000 each: 5.2 GB in all. They are sized with `ftruncate`, which leaves a
+2,359,820,288 bytes, `Partition2.img` 524,288,000, `Partition3` to `5`
+786,432,000 each: 5,243,404,288 bytes (5.2 GB) in all. They are sized with `ftruncate`, which leaves a
 hole on file systems that support sparse files, so on a Mac or Linux they cost
 almost nothing. The title asks a partition its length from the file's size
 (`IOCTL_DISK_GET_PARTITION_INFO` in `kernel_bridge.c`), so the sizes matter.
@@ -294,7 +294,8 @@ Sizes are rough: S = an hour or two, M = half a day to a day.
     files are, Controls and the settings menu (keep the current table: Touchpad
     + Options), What's better than on the Xbox (Takedawn's highlights that hold
     on the PS5), Known issues, Reporting a bug (Settings > Advanced > Create bug
-    report writes a zip under `userdata/takedawn/`; fetch it by FTP), How it
+    report writes a zip to `userdata/takedawn/reports/`, by the toolkit's
+    `xbox_report.c`; fetch it by FTP; not yet tried on the console), How it
     works, Build from source (your own `default.xbe`, `gen.sh` on the Mac,
     `ps5/tools/glyphs.sh`, `ps5/tools/vm.sh build`, `console.sh`), Credits,
     Licence, Legal notice. For the legal wording, adapt upstream's: unofficial,
@@ -356,8 +357,8 @@ Nothing found that blocks it:
 ## README install steps, as players would read them
 
 > **USA disc only.** You need your own copy of *Burnout 3: Takedown* for the
-> original Xbox, the North America (NTSC-U) release. PAL and Japanese discs, the
-> PlayStation 2 and GameCube versions and the Xbox 360 download don't work.
+> original Xbox, the North America (NTSC-U) release. PAL and Japanese discs and
+> the PlayStation 2 version don't work.
 
 ### What you need
 
