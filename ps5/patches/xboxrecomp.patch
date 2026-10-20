@@ -304,6 +304,27 @@ index fc4fa39..252d157 100644
  #if !defined(_WIN32) && (defined(__aarch64__) || defined(MMIO_POSIX_X86))
  #define MMIO_POSIX_TRAP 1
  #endif
+diff --git a/src/platform/recomp_env.c b/src/platform/recomp_env.c
+index a3500f4..0a18442 100644
+--- a/src/platform/recomp_env.c
++++ b/src/platform/recomp_env.c
+@@ -267,12 +267,13 @@ static void load(void)
+     /* Switches that default on: unset means on, =0 (or empty) off, so a
+      * reader keeps asking only "is it set". Audio needs the host to service
+      * the APU's MMIO faults (x86-64 Windows/Proton, POSIX arm64 with the
+-     * A64 decoder, x86-64 Linux with the x86 one); elsewhere it is off,
+-     * with a note when asked for explicitly. */
++     * A64 decoder, x86-64 Linux and FreeBSD with the x86 one: the
++     * PlayStation 5 reads the faulting instruction from its code copy);
++     * elsewhere it is off, with a note when asked for explicitly. */
+     default_on(values, RENV_PB_EXEC, 1);
+ #if (defined(_WIN32) && (defined(_M_X64) || defined(__x86_64__))) || \
+     (!defined(_WIN32) && defined(__aarch64__)) || \
+-    (defined(__linux__) && defined(__x86_64__))
++    ((defined(__linux__) || defined(__FreeBSD__)) && defined(__x86_64__))
+     default_on(values, RENV_AC97_READY, 1);
+ #else
+     default_on(values, RENV_AC97_READY, 0);
 diff --git a/src/platform/win32_compat.c b/src/platform/win32_compat.c
 index b53b93b..3914d1f 100644
 --- a/src/platform/win32_compat.c

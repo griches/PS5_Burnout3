@@ -60,7 +60,7 @@ run)
     run_dir="$root/klog/$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$run_dir"
     python3 "$vulkan/tools/run-title.py" "$title_id" \
-        --until 'exit status|fatal signal|killing coredump|APP_SUSPENDING|Sending signal|\[FAULT\]' --timeout "$seconds" \
+        --until 'exit status|killing coredump|APP_SUSPENDING|Sending signal' --timeout "$seconds" \
         --echo "^\\[$title_name\\]|fatal|Sending signal|coredump" \
         --elf "$root/build/last-title.elf" --output "$run_dir/klog.log" || true
     echo "klog: $run_dir/klog.log"
