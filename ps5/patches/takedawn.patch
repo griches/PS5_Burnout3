@@ -51,7 +51,7 @@ index c696deb..bd8c3fa 100644
  
  #define M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 diff --git a/src/game/main.c b/src/game/main.c
-index 81f12e2..20d964b 100644
+index 81f12e2..89769e3 100644
 --- a/src/game/main.c
 +++ b/src/game/main.c
 @@ -107,9 +107,11 @@ extern void xbox_InputPanicStop(int wait_ms);
@@ -66,6 +66,24 @@ index 81f12e2..20d964b 100644
  extern ptrdiff_t g_xbox_mem_offset;
  
  extern void xbe_entry_point(void);
+@@ -3279,9 +3281,17 @@ int main(int argc, char **argv)
+      * a util clamp does nothing on amd-pstate-epp). A steady 60 in races
+      * at about 10 W, against 14 W spinning throughout. */
+     env_default("RECOMP_VBLANK_SYNC", "display");
++#if defined(__PROSPERO__)
++    /* The PlayStation 5: no battery to save and a core to spare, so Maximum
++     * (power.mode = stock): the title's waits spin throughout, the steadiest
++     * frame times. A stored power.mode still wins. */
++    env_default("RECOMP_PRESENT_PACING", "spin");
++    env_default("RECOMP_PRESENT_SPIN_LEAD", "0");
++#else
+     env_default("RECOMP_PRESENT_PACING", "sleep");
+     env_default("RECOMP_PRESENT_SPIN_LEAD", "8");
+ #endif
++#endif
+ #else
+     env_default("RECOMP_APU_DSP_ACK", "0x825F8810");
+ #endif
 diff --git a/src/game/menuentry.c b/src/game/menuentry.c
 index facb381..661e35b 100644
 --- a/src/game/menuentry.c
