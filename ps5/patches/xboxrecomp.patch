@@ -167,10 +167,22 @@ index 3819802..d1c9bd2 100644
          # while held, an end by itself, stopped at every exit.
          add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/input_rumble_sdl
 diff --git a/src/install/disc_install.c b/src/install/disc_install.c
-index 7bdf057..13dd4a0 100644
+index 7bdf057..62247b6 100644
 --- a/src/install/disc_install.c
 +++ b/src/install/disc_install.c
-@@ -389,7 +389,14 @@ static int src_open(inst *in, const char *rel, src_file *sf)
+@@ -133,6 +133,11 @@ static int p_sync(FILE *f)
+         return 0;
+ #if defined(_WIN32)
+     return _commit(_fileno(f)) == 0;
++#elif defined(__PROSPERO__)
++    /* The PlayStation 5: an fsync a file cost a fraction of a second, and
++     * the disc's 716 files took five minutes of an install. One sync before
++     * the marker is written (run) stands for them. */
++    return 1;
+ #else
+     return fsync(fileno(f)) == 0;
+ #endif
+@@ -389,7 +394,14 @@ static int src_open(inst *in, const char *rel, src_file *sf)
          sf->fp = fopen(path, "rb");
          if (!sf->fp)
              return -1;
@@ -185,7 +197,7 @@ index 7bdf057..13dd4a0 100644
      }
      return 1;
  }
-@@ -732,7 +739,11 @@ static int verify_in_place(inst *in, const xr_manifest_file *mf, const char *pat
+@@ -732,7 +744,11 @@ static int verify_in_place(inst *in, const xr_manifest_file *mf, const char *pat
  
      if (!f)
          return 0;
@@ -197,6 +209,31 @@ index 7bdf057..13dd4a0 100644
      xr_sha256_init(&sha);
      while (left) {
          size_t n = left > CHUNK ? CHUNK : (size_t)left;
+@@ -795,7 +811,14 @@ static int copy_file(inst *in, const xr_manifest_file *mf, const char *path)
+         src_close(&sf);
+         return fail_write(in, part);
+     }
++#if defined(__FreeBSD__)
++    /* FreeBSD's stdio writes an unbuffered stream BUFSIZ (1 KiB) at a time:
++     * 2.5 GB of the disc as 2.5 million writes. One buffer of the chunk's
++     * size makes each chunk one write. */
++    setvbuf(out, NULL, _IOFBF, CHUNK);
++#else
+     setvbuf(out, NULL, _IONBF, 0);
++#endif
+     xr_sha256_init(&sha);
+     rc = XR_INSTALL_OK;
+     for (left = mf->size; left && rc == XR_INSTALL_OK; ) {
+@@ -964,6 +987,9 @@ static int run(inst *in)
+     in->journal = NULL;
+     if (rc != XR_INSTALL_OK)
+         return rc;
++#if defined(__PROSPERO__)
++    sync();                     /* the files' data, before the marker (p_sync) */
++#endif
+     rc = marker_write(in);
+     if (rc == XR_INSTALL_OK) {
+         dest_path(in, JOURNAL, path, sizeof path);
 diff --git a/src/kernel/CMakeLists.txt b/src/kernel/CMakeLists.txt
 index 6989a3f..3989b8c 100644
 --- a/src/kernel/CMakeLists.txt

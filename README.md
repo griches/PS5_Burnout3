@@ -32,8 +32,9 @@ menu, at 60 fps.
 2. Copy the whole `PPSA99316` folder to `/data/homebrew/` on the console.
 3. Copy your disc image into `/data/homebrew/PPSA99316/dump/`.
 4. Start **Burnout 3** from the home screen. The first start checks your disc
-   and sets up the game data, which takes a few minutes once. Notifications
-   show the progress, and then the game starts.
+   and sets up the game data. This happens once and takes a few minutes: a
+   screen shows the progress, the time left and a clock, and then the game
+   starts. Leave it running until it does.
 5. You can now delete the image in `dump/`.
 
 If the disc is the wrong region or the image is damaged, a notification says
@@ -94,8 +95,6 @@ settings stay.
 
 ## Known issues
 
-- No picture while the first start sets up the game data: the notifications
-  are the only sign of progress.
 - Some frame-rate dips below 60 can happen in busy races.
 - The game makes Xbox hard-disk image files (`userdata/takedawn/Partition*.img`)
   as the PC versions do.

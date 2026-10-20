@@ -44,7 +44,7 @@ include_directories(BEFORE ${ps5}/include)
 set(ps5_platform_archive ${CMAKE_BINARY_DIR}/libps5_platform.a)
 
 # The console: klog, the pad, and the libc names a title cannot import
-add_library(ps5_platform STATIC ${ps5}/src/platform.c ${ps5}/src/shims.c ${ps5}/src/startup.c ${ps5}/src/paths.c ${ps5}/src/codecopy.c ${ps5}/src/firstrun.c
+add_library(ps5_platform STATIC ${ps5}/src/platform.c ${ps5}/src/shims.c ${ps5}/src/startup.c ${ps5}/src/paths.c ${ps5}/src/codecopy.c ${ps5}/src/firstrun.c ${ps5}/src/installscreen.c
 	${ps5}/src/devloop_shot.c)
 target_include_directories(ps5_platform PUBLIC ${ps5}/src)
 file(READ ${ps5}/sce_sys/param.json param_json)

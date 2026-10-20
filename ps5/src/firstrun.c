@@ -17,8 +17,9 @@
  *   /app0/dump/<folder>/          an extracted folder (or one level further down)
  *   /app0/<any>.iso               an image beside eboot.bin
  *
- * There is no picture during the install: the console's notifications say
- * what is happening, and why when nothing can be used.
+ * During the install a screen of its own (ps5/src/installscreen.c) shows the
+ * bar, the time left and that it happens once; notifications say the start,
+ * the end, and why when nothing can be used.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -42,6 +43,11 @@ int bo3_install_from(const char *source, const char *dest, int check_only,
                      char *message, size_t n);
 
 int sceKernelSendNotificationRequest(int device, void *request, size_t size, int blocking);
+
+/* ps5/src/installscreen.c */
+int install_screen_start(void);
+void install_screen_progress(double fraction);
+void install_screen_stop(void);
 
 /* A notification on the screen (the title has no picture yet), and klog */
 static void
@@ -140,20 +146,38 @@ scan(const char *folder, int folders)
    closedir(directory);
 }
 
-/* Progress: a notification at the start and at each quarter */
-static int last_quarter;
+/* Progress: on the screen, or (if it could not be opened) a notification
+ * every tenth with a bar and the time left */
+static int last_tenth, on_screen;
 static time_t started;
 
 static void
 progress(void *ctx, double fraction, const char *text)
 {
+   char bar[11];
+   int tenth = (int)(fraction * 10.0);
+   long elapsed, left;
+
    (void)ctx;
    (void)text;
-   int quarter = (int)(fraction * 4.0);
-   if (quarter > last_quarter && quarter < 4) {
-      last_quarter = quarter;
-      notify("Burnout 3: setting up the game data, %d%% done...", quarter * 25);
-   }
+   install_screen_progress(fraction);
+   if (tenth <= last_tenth || tenth >= 10)
+      return;
+   last_tenth = tenth;
+   say("[firstrun] %d%% of the bytes at %ld s", tenth * 10, (long)(time(NULL) - started));
+   if (on_screen)
+      return;
+   for (int i = 0; i < 10; i++)
+      bar[i] = i < tenth ? '#' : '-';
+   bar[10] = 0;
+   elapsed = (long)(time(NULL) - started);
+   left = fraction > 0.0 ? (long)(elapsed / fraction) - elapsed : 0;
+   if (left >= 60)
+      notify("Burnout 3: setting up the game data\n[%s] %d%%, about %ld min left", bar, tenth * 10,
+             (left + 59) / 60);
+   else
+      notify("Burnout 3: setting up the game data\n[%s] %d%%, less than a minute left", bar,
+             tenth * 10);
 }
 
 int
@@ -180,11 +204,14 @@ ps5_first_run(void)
             snprintf(first_problem, sizeof first_problem, "%s", message);
          continue;
       }
-      notify("Burnout 3: setting up the game data from your disc. This takes a few minutes, "
-             "once. Please wait.");
-      last_quarter = 0;
+      last_tenth = 0;
       started = time(NULL);
+      on_screen = install_screen_start() == 0;
+      notify("Burnout 3: setting up the game data from your disc. This happens once and takes a "
+             "few minutes.%s",
+             on_screen ? "" : "\nProgress is shown here. Please wait.");
       code = bo3_install_from(sources[i], TITLE_DIR, 0, progress, NULL, message, sizeof message);
+      install_screen_stop();
       if (code == 0) {
          if (strstr(sources[i], "/" GAME_DIR) && is_dir(sources[i]) && !strstr(sources[i], "/dump/"))
             notify("Burnout 3: game data checked and ready (%ld s).", (long)(time(NULL) - started));

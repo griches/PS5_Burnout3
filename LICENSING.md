@@ -9,6 +9,7 @@ their own licence alone.
 | Path | Licence |
 | --- | --- |
 | `ps5/src/`, `ps5/tools/`, `ps5/cmake/` (written for this port, or from the PS5 Vulkan Template by Mihawk) | MIT ([`licenses/MIT.txt`](licenses/MIT.txt)) |
+| `ps5/src/installscreen.c` (the first-start screen; its tile layout and font are PS5_Vulkan's) | GPL-3.0-or-later, as PS5_Vulkan |
 | `ps5/tools/png-to-title-dds.py` (from PS5 RetroArch, by Mihawk) | GPL-3.0-or-later ([`licenses/GPL-3.0.txt`](licenses/GPL-3.0.txt)) |
 | `ps5/sdl/` (SDL2 drivers for the console) and `ps5/patches/sdl.patch` | Zlib, as SDL ([`licenses/Zlib.txt`](licenses/Zlib.txt)) |
 | `ps5/patches/takedawn.patch` | MIT, as Takedawn |
