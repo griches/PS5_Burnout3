@@ -22,3 +22,89 @@ index 47d43b6..d83a407 100644
      add_subdirectory(tests/controls)
      # Which sound goes to which mixer bus (src/game/mixer.c, BO-114).
      add_subdirectory(tests/mixer)
+diff --git a/src/game/autopilot.c b/src/game/autopilot.c
+index ef49115..41cbb9b 100644
+--- a/src/game/autopilot.c
++++ b/src/game/autopilot.c
+@@ -55,7 +55,9 @@
+ #include "platform/recomp_patch.h"
+ #include "recomp_types.h"
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esi, g_esp;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ extern void sub_00179760(void);
+ 
+diff --git a/src/game/controls.c b/src/game/controls.c
+index c696deb..bd8c3fa 100644
+--- a/src/game/controls.c
++++ b/src/game/controls.c
+@@ -37,7 +37,9 @@
+ #include "platform/recomp_patch.h"
+ #include "recomp_types.h"
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_ebx, g_esi;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
+ #define M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
+diff --git a/src/game/main.c b/src/game/main.c
+index 81f12e2..20d964b 100644
+--- a/src/game/main.c
++++ b/src/game/main.c
+@@ -107,9 +107,11 @@ extern void xbox_InputPanicStop(int wait_ms);
+ /* RECOMP_TLS is required: the runtime defines these thread-local, and a plain
+  * extern resolves to the image's TLS template rather than this thread's copy,
+  * which starts the guest with every register at zero. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
+ extern RECOMP_TLS uint32_t g_seh_ebp;
+ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
+ extern void xbe_entry_point(void);
+diff --git a/src/game/menuentry.c b/src/game/menuentry.c
+index facb381..661e35b 100644
+--- a/src/game/menuentry.c
++++ b/src/game/menuentry.c
+@@ -47,7 +47,9 @@
+ #include "xbox_settings.h"
+ #endif
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ebx, g_ecx, g_edx, g_esi, g_edi, g_esp;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ extern void sub_001D2879(void);          /* the title's heap: (size, tag), stdcall */
+ 
+diff --git a/src/game/recomp/recomp_manual.c b/src/game/recomp/recomp_manual.c
+index 24198ba..7c0ffba 100644
+--- a/src/game/recomp/recomp_manual.c
++++ b/src/game/recomp/recomp_manual.c
+@@ -46,7 +46,9 @@ typedef void (*recomp_func_t)(void);
+ 
+ /* ── Register state (defined in xbox_memory_layout.c) ──────── */
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern uint32_t g_eax;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
+ /* ── Manual function overrides ─────────────────────────────── */
+diff --git a/src/game/tutorial.c b/src/game/tutorial.c
+index 25f6d11..6b4a99d 100644
+--- a/src/game/tutorial.c
++++ b/src/game/tutorial.c
+@@ -21,7 +21,9 @@
+ #include "controls.h"
+ #include "platform/recomp_patch.h"
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_esp;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
+ #define TU_M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))

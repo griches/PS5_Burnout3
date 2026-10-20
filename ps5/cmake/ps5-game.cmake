@@ -27,6 +27,10 @@ set(ps5 ${PS5_PORT_DIR}/ps5)
 add_compile_options(-g1 -ffunction-sections -fdata-sections -fno-omit-frame-pointer)
 # The console's CPU is a Zen 2: the toolchain's default is the first x86-64.
 add_compile_options(-march=znver2)
+# The guest's registers in one thread-local block behind a const accessor
+# (the toolkit's platform/recomp_regfile.h has why): before recomp_types.h
+# and xbox_memory_layout.h, in every source.
+add_compile_options("SHELL:-include ${XBOXRECOMP_DIR}/src/platform/recomp_regfile.h")
 # An init array, in the order the source has: tools/cc-init-array.sh has the reason
 set(CMAKE_C_COMPILER_LAUNCHER sh ${ps5}/tools/cc-init-array.sh)
 set(CMAKE_CXX_COMPILER_LAUNCHER sh ${ps5}/tools/cc-init-array.sh)

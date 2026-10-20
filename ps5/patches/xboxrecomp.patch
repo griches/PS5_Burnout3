@@ -1,3 +1,18 @@
+diff --git a/src/apu/apu_core.c b/src/apu/apu_core.c
+index 45c3334..f8b649e 100644
+--- a/src/apu/apu_core.c
++++ b/src/apu/apu_core.c
+@@ -257,8 +257,10 @@ extern void xbox_IrqNoteUngated(int line);
+ #else
+ #  define APU_TLS __thread
+ #endif
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern APU_TLS uint32_t g_eax, g_ecx, g_edx, g_esp, g_ebx, g_esi, g_edi;
+ extern APU_TLS uint32_t g_fs_base;
++#endif
+ 
+ /* Call the connected service routine while the line is up, from the frame
+  * thread, the way the OHCI model delivers USB interrupts (ohci_call_isr):
 diff --git a/src/d3d/CMakeLists.txt b/src/d3d/CMakeLists.txt
 index 1f0214c..37ae4d7 100644
 --- a/src/d3d/CMakeLists.txt
@@ -167,7 +182,7 @@ index 6989a3f..3989b8c 100644
      target_link_libraries(xbox_kernel PUBLIC platform)
  else()
 diff --git a/src/kernel/kernel_bridge.c b/src/kernel/kernel_bridge.c
-index 3219a6d..c769c65 100644
+index 3219a6d..a1c36ef 100644
 --- a/src/kernel/kernel_bridge.c
 +++ b/src/kernel/kernel_bridge.c
 @@ -40,6 +40,9 @@
@@ -180,7 +195,24 @@ index 3219a6d..c769c65 100644
  /* stdlib.h is load-bearing, not tidiness. Without it C89 implicit declaration
   * makes malloc return `int`, so bridge_spawn_thread truncated its heap pointer
   * to 32 bits and sign-extended it into a `struct bridge_thread_start *`. Every
-@@ -551,6 +554,8 @@ static void thread_set_os_name(const char *name)
+@@ -59,10 +62,16 @@
+  * xbox_memory_layout.h and must match the definitions there -- a plain extern
+  * here binds to the TLS template rather than the calling thread's copy, which
+  * reads as every register being zero. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
++#endif
++#endif
+ extern uint32_t g_xbox_code_lo, g_xbox_code_hi;
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_seh_ebp;
++#endif
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
+ /* Dispatch table lookup (for function pointer args) */
+@@ -551,6 +560,8 @@ static void thread_set_os_name(const char *name)
      set_desc(GetCurrentThread(), w);
  #elif defined(__APPLE__)
      pthread_setname_np(name);
@@ -189,11 +221,214 @@ index 3219a6d..c769c65 100644
  #else
      pthread_setname_np(pthread_self(), name);
  #endif
+diff --git a/src/kernel/kernel_hal.c b/src/kernel/kernel_hal.c
+index e2c1f0c..704a6f8 100644
+--- a/src/kernel/kernel_hal.c
++++ b/src/kernel/kernel_hal.c
+@@ -56,7 +56,9 @@ static XBOX_THREAD_LOCAL KIRQL g_current_irql = PASSIVE_LEVEL;
+  * critical section, blocked against the thread that held it, and the title
+  * froze with IRQL raised on the blocked thread. Every change of
+  * g_current_irql is published here. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_fs_base;
++#endif
+ /* The offset lifted code adds to every guest address; host code that reads
+  * guest memory on its behalf uses the same one. */
+ extern ptrdiff_t g_xbox_mem_offset;
+@@ -137,7 +139,9 @@ static struct {
+     void *ra;
+     uint32_t guest_ra, guest_esp;   /* the host ra only ever names the bridge */
+ } s_holders[IRQL_HOLDERS];
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_esp;
++#endif
+ 
+ static void irql_holder_add(void *ra)
+ {
+@@ -413,6 +417,7 @@ static void irq_note_wait(int line, uint64_t posted_ns)
+  * these across a call or an instruction is put back. g_fs_base stays: the
+  * routine runs on the holder's TIB, as on the console's one CPU (a device
+  * model's thread as holder: see irq_release_point). */
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi, g_ebp;
+ extern RECOMP_TLS uint32_t g_seh_ebp, g_eflags;
+ extern RECOMP_TLS int g_df, g_fp_top, g_fp_cmp;
+@@ -422,6 +427,7 @@ extern RECOMP_TLS RecompXmm g_xmm0, g_xmm1, g_xmm2, g_xmm3;
+ extern RECOMP_TLS RecompXmm g_xmm4, g_xmm5, g_xmm6, g_xmm7;
+ extern RECOMP_TLS RecompMmx g_mm0, g_mm1, g_mm2, g_mm3;
+ extern RECOMP_TLS RecompMmx g_mm4, g_mm5, g_mm6, g_mm7;
++#endif
+ 
+ typedef struct {
+     uint32_t eax, ecx, edx, ebx, esi, edi, ebp, esp, seh_ebp, eflags;
+diff --git a/src/kernel/kernel_prof.c b/src/kernel/kernel_prof.c
+index 1ccf8af..4b75fb8 100644
+--- a/src/kernel/kernel_prof.c
++++ b/src/kernel/kernel_prof.c
+@@ -117,7 +117,9 @@ long long xbox_ProfNowUs(void)
+  * rough call stack: a stale word can show up). Identical samples are
+  * tallied; the top few are printed with the table. */
+ extern ptrdiff_t g_xbox_mem_offset;
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_esp;
++#endif
+ 
+ #define SAMPLE_AFTER_US 20000
+ #define GUEST_CODE_LO   0x00011000u
+diff --git a/src/kernel/kernel_rtl.c b/src/kernel/kernel_rtl.c
+index 0dd388c..92467b3 100644
+--- a/src/kernel/kernel_rtl.c
++++ b/src/kernel/kernel_rtl.c
+@@ -319,7 +319,9 @@ static CRITICAL_SECTION* xbox_cs_shadow(PRTL_CRITICAL_SECTION guest)
+  * pointer does not. */
+ extern ptrdiff_t g_xbox_mem_offset;
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_esp;
++#endif
+ extern uint32_t g_xbox_code_lo, g_xbox_code_hi;
+ 
+ /* A guest backtrace, printed where the guest is standing.
+diff --git a/src/kernel/recomp_trace.c b/src/kernel/recomp_trace.c
+index 4630638..31f077a 100644
+--- a/src/kernel/recomp_trace.c
++++ b/src/kernel/recomp_trace.c
+@@ -19,8 +19,12 @@
+ 
+ #include "xbox_memory_layout.h"
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
++#endif
++#endif
+ 
+ /* A run that recurses produces trace lines without limit, and the useful
+  * window is rarely the first few thousand. The budget stops a diagnostic from
+diff --git a/src/kernel/xbox_crash.c b/src/kernel/xbox_crash.c
+index 2d4963d..f868721 100644
+--- a/src/kernel/xbox_crash.c
++++ b/src/kernel/xbox_crash.c
+@@ -52,8 +52,10 @@
+ #endif
+ #endif
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_ebx, g_esp, g_esi, g_edi, g_ebp;
+ extern RECOMP_TLS uint32_t g_seh_ebp;
++#endif
+ extern volatile uint32_t g_icall_trace[16];
+ extern volatile uint32_t g_icall_trace_idx;
+ extern volatile uint64_t g_icall_count;
 diff --git a/src/kernel/xbox_memory_layout.c b/src/kernel/xbox_memory_layout.c
-index ffb4b51..d8f07e0 100644
+index ffb4b51..968034b 100644
 --- a/src/kernel/xbox_memory_layout.c
 +++ b/src/kernel/xbox_memory_layout.c
-@@ -3176,7 +3176,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
+@@ -2129,7 +2129,25 @@ uint32_t g_xbox_code_hi = 0;
+ /* Global registers for recompiled code (via recomp_types.h) */
+ /* Each guest thread's TIB. The first thread uses the one the loader built;
+  * a spawned thread gets its own from xbox_AllocThreadTib(). */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint32_t g_fs_base = XBOX_TIB_MAIN;
++#endif
++
++#if defined(RECOMP_REGFILE)
++/* The PlayStation 5's register block (platform/recomp_regfile.h): the reset
++ * values the separate definitions below give everywhere else. */
++static RECOMP_TLS RecompRegFile s_regfile = {
++    .r_fs_base = XBOX_TIB_MAIN,
++    .r_eflags = 0x00000202u,
++    .r_fp_control_word = 0x037Fu,
++    .r_fp_cc = 0x4000,
++};
++
++RecompRegFile *recomp_regfile(void)
++{
++    return &s_regfile;
++}
++#endif
+ 
+ /* The shape of the TLS block the loader built, so a new thread can be
+  * given one just like it: where the initialised image data starts, how
+@@ -2137,8 +2155,10 @@ RECOMP_TLS uint32_t g_fs_base = XBOX_TIB_MAIN;
+  * at is. Zero total means the image had no TLS directory. */
+ static uint32_t g_tls_template_va, g_tls_total, g_tls_thread_size = 64;
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint32_t g_eax = 0, g_ecx = 0, g_edx = 0, g_esp = 0;
+ RECOMP_TLS uint32_t g_ebx = 0, g_esi = 0, g_edi = 0;
++#endif
+ 
+ #ifdef RECOMP_ABI_CHECK
+ /* Report a lifted function that returned without restoring ebx/esi/edi.
+@@ -2200,9 +2220,11 @@ void recomp_abi_violation_log(uint32_t va, uint32_t ebx0, uint32_t esi0,
+ #endif
+ 
+ /* SEH frame pointer bridge (see recomp_types.h for explanation) */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint32_t g_seh_ebp = 0;
+ RECOMP_TLS double g_fp_stack[8];
+ RECOMP_TLS int g_fp_top = 0;
++#endif
+ 
+ /* Set once at startup. The generated code reads it at the ret of every
+  * --force-return function, so it has to be cheap and it has to default to
+@@ -2211,13 +2233,19 @@ RECOMP_TLS int g_fp_top = 0;
+ int g_force_return = 0;
+ /* x87 control and status. The reset default masks every exception and
+  * rounds to nearest, which is what the CRT expects before _control87. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint16_t g_fp_control_word = 0x037Fu;
+ RECOMP_TLS int g_fp_cmp = 0;
+ RECOMP_TLS uint16_t g_fp_cc = 0x4000;
++#endif
+ 
+ /* Defined below, with the other guest registers. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_ebp;
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_ebx, g_esi, g_edi;
++#endif
++#endif
+ 
+ /* ---- non-local jumps ---------------------------------------------------
+  *
+@@ -3048,13 +3076,17 @@ void xbox_WatchdogStart(void)
+ }
+ 
+ /* SSE. 128 bits of architectural state, per-thread like the rest. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS RecompMmx g_mm0, g_mm1, g_mm2, g_mm3;
+ RECOMP_TLS RecompMmx g_mm4, g_mm5, g_mm6, g_mm7;
+ RECOMP_TLS RecompXmm g_xmm0, g_xmm1, g_xmm2, g_xmm3;
+ RECOMP_TLS RecompXmm g_xmm4, g_xmm5, g_xmm6, g_xmm7;
++#endif
+ /* Last frame established by `mov ebp, esp`. Read by frameless functions
+  * that address their caller's frame through ebp. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint32_t g_ebp = 0;
++#endif
+ 
+ /* EFLAGS.DF. Zero means the string instructions walk forwards, which is the
+  * ABI's resting state and what almost every one of them does -- so this is
+@@ -3063,11 +3095,15 @@ RECOMP_TLS uint32_t g_ebp = 0;
+  * `std; repne scasb`, and memmove goes backwards when its regions overlap the
+  * wrong way. Thread-local, because `std` and the `cld` that undoes it can land
+  * in different lifted bodies of the same guest routine. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS int g_df = 0;
++#endif
+ 
+ /* The last EFLAGS image popfd loaded (see recomp_types.h). Bit 1 is always
+  * set and IF is on, as in any guest thread the kernel schedules. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ RECOMP_TLS uint32_t g_eflags = 0x00000202u;
++#endif
+ 
+ /* ICALL trace ring buffer */
+ volatile uint32_t g_icall_trace[16] = {0};
+@@ -3176,7 +3212,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
           * otherwise run to 0xE8000000 and hold 0x80000000 against it. */
          if (g_span_size > XBOX_CONTIG_BASE)
              g_span_size = XBOX_CONTIG_BASE;
@@ -202,6 +437,20 @@ index ffb4b51..d8f07e0 100644
          {
              /* The whole 4 GB guest window, held as a placeholder that the
               * fixed views replace (win32_compat.c, xbox_compat_guest_window):
+diff --git a/src/kernel/xbox_memory_layout.h b/src/kernel/xbox_memory_layout.h
+index 7b9c5e8..ead66d4 100644
+--- a/src/kernel/xbox_memory_layout.h
++++ b/src/kernel/xbox_memory_layout.h
+@@ -433,7 +433,9 @@ extern uint32_t g_xbox_stack_size;
+  * thread gets its own from xbox_AllocThreadTib() and points g_fs_base at
+  * it. */
+ #define XBOX_TIB_MAIN       0x00004000
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_fs_base;
++#endif
+ #define XBOX_FS_BASE        g_fs_base
+ 
+ #define XBOX_STACK_BASE     g_xbox_stack_base
 diff --git a/src/overlay/CMakeLists.txt b/src/overlay/CMakeLists.txt
 index 3113078..c43f7b5 100644
 --- a/src/overlay/CMakeLists.txt
@@ -325,6 +574,119 @@ index a3500f4..0a18442 100644
      default_on(values, RENV_AC97_READY, 1);
  #else
      default_on(values, RENV_AC97_READY, 0);
+diff --git a/src/platform/recomp_regfile.h b/src/platform/recomp_regfile.h
+new file mode 100644
+index 0000000..0cbc67b
+--- /dev/null
++++ b/src/platform/recomp_regfile.h
+@@ -0,0 +1,107 @@
++/*
++ * recomp_regfile.h - the guest's registers in one thread-local block, on the
++ * PlayStation 5.
++ *
++ * The registers are thread-local (RECOMP_TLS, recomp_types.h): each guest
++ * thread has its own set. The console's titles are built with emulated TLS,
++ * where every access to a thread-local is a call (__emutls_get_address,
++ * about 3.4 ns over a plain load), and lifted code touches eax, esp and the
++ * rest in nearly every statement: one host instruction in seven was such a
++ * call, and Burnout 3's CPU work overran its frames. Native TLS is not open
++ * to a title there.
++ *
++ * So the registers live in one thread-local struct, reached through
++ * recomp_regfile(), which is declared const: its result depends on nothing
++ * the compiler can see change, so a function asks once and keeps the pointer
++ * (glibc's __errno_location is declared the same way). The g_* names become
++ * that struct's fields, for the generated code and the runtime alike.
++ *
++ * Force-included into every source of a console build, before
++ * recomp_types.h and xbox_memory_layout.h, whose own declarations of these
++ * names step aside (RECOMP_REGFILE). Elsewhere this header is empty.
++ */
++#ifndef RECOMP_REGFILE_H
++#define RECOMP_REGFILE_H
++
++#if defined(__PROSPERO__)
++#include <stdint.h>
++
++#define RECOMP_REGFILE 1
++
++/* The SSE and MMX registers' types, as recomp_types.h and
++ * xbox_memory_layout.h define them (which skip theirs when these exist). */
++#ifndef RECOMP_XMM_DEFINED
++#define RECOMP_XMM_DEFINED
++typedef union RecompXmm {
++    float    f[4];
++    double   d[2];
++    uint32_t u[4];
++    int32_t  i[4];
++    uint64_t q[2];
++} RecompXmm;
++#endif
++#ifndef RECOMP_MMX_DEFINED
++#define RECOMP_MMX_DEFINED
++typedef union RecompMmx {
++    int8_t   b[8];
++    uint8_t  ub[8];
++    int16_t  w[4];
++    uint16_t uw[4];
++    int32_t  d[2];
++    uint32_t ud[2];
++    uint64_t q;
++} RecompMmx;
++#endif
++
++/* (r_ names: the generated code defines eax, esp ... as macros) */
++typedef struct RecompRegFile {
++    uint32_t r_eax, r_ecx, r_edx, r_esp, r_ebx, r_esi, r_edi, r_ebp;
++    uint32_t r_fs_base, r_seh_ebp, r_eflags;
++    int r_df, r_fp_top, r_fp_cmp;
++    uint16_t r_fp_control_word, r_fp_cc;
++    double r_fp_stack[8];
++    RecompXmm r_xmm[8];
++    RecompMmx r_mm[8];
++} RecompRegFile;
++
++#ifdef __cplusplus
++extern "C"
++#endif
++RecompRegFile *recomp_regfile(void) __attribute__((const, nothrow));
++
++#define g_eax             (recomp_regfile()->r_eax)
++#define g_ecx             (recomp_regfile()->r_ecx)
++#define g_edx             (recomp_regfile()->r_edx)
++#define g_esp             (recomp_regfile()->r_esp)
++#define g_ebx             (recomp_regfile()->r_ebx)
++#define g_esi             (recomp_regfile()->r_esi)
++#define g_edi             (recomp_regfile()->r_edi)
++#define g_ebp             (recomp_regfile()->r_ebp)
++#define g_fs_base         (recomp_regfile()->r_fs_base)
++#define g_seh_ebp         (recomp_regfile()->r_seh_ebp)
++#define g_eflags          (recomp_regfile()->r_eflags)
++#define g_df              (recomp_regfile()->r_df)
++#define g_fp_top          (recomp_regfile()->r_fp_top)
++#define g_fp_cmp          (recomp_regfile()->r_fp_cmp)
++#define g_fp_control_word (recomp_regfile()->r_fp_control_word)
++#define g_fp_cc           (recomp_regfile()->r_fp_cc)
++#define g_fp_stack        (recomp_regfile()->r_fp_stack)
++#define g_xmm0            (recomp_regfile()->r_xmm[0])
++#define g_xmm1            (recomp_regfile()->r_xmm[1])
++#define g_xmm2            (recomp_regfile()->r_xmm[2])
++#define g_xmm3            (recomp_regfile()->r_xmm[3])
++#define g_xmm4            (recomp_regfile()->r_xmm[4])
++#define g_xmm5            (recomp_regfile()->r_xmm[5])
++#define g_xmm6            (recomp_regfile()->r_xmm[6])
++#define g_xmm7            (recomp_regfile()->r_xmm[7])
++#define g_mm0             (recomp_regfile()->r_mm[0])
++#define g_mm1             (recomp_regfile()->r_mm[1])
++#define g_mm2             (recomp_regfile()->r_mm[2])
++#define g_mm3             (recomp_regfile()->r_mm[3])
++#define g_mm4             (recomp_regfile()->r_mm[4])
++#define g_mm5             (recomp_regfile()->r_mm[5])
++#define g_mm6             (recomp_regfile()->r_mm[6])
++#define g_mm7             (recomp_regfile()->r_mm[7])
++#endif /* __PROSPERO__ */
++
++#endif /* RECOMP_REGFILE_H */
 diff --git a/src/platform/win32_compat.c b/src/platform/win32_compat.c
 index b53b93b..3914d1f 100644
 --- a/src/platform/win32_compat.c
@@ -556,6 +918,22 @@ index b53b93b..3914d1f 100644
  #else
      struct sysinfo si;
      if (sysinfo(&si) != 0) return FALSE;
+diff --git a/src/usb/ohci.c b/src/usb/ohci.c
+index 6da78b3..5be64e7 100644
+--- a/src/usb/ohci.c
++++ b/src/usb/ohci.c
+@@ -55,9 +55,11 @@ extern uint32_t xbox_GetConnectedInterrupt(uint32_t vector);
+ #else
+ #  define OHCI_TLS __thread
+ #endif
++#if !defined(RECOMP_REGFILE)   /* the PS5: platform/recomp_regfile.h */
+ extern OHCI_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
+ extern OHCI_TLS uint32_t g_ebx, g_esi, g_edi;
+ extern OHCI_TLS uint32_t g_fs_base;
++#endif
+ extern uint32_t xbox_AllocThreadTib(void);
+ 
+ /* The vector XPP takes for USB0. HalGetInterruptVector(1) returns 1 here, and
 diff --git a/src/video/CMakeLists.txt b/src/video/CMakeLists.txt
 index bf40656..683de11 100644
 --- a/src/video/CMakeLists.txt
@@ -588,3 +966,104 @@ index 983a3fb..bf68cb1 100644
  #include <vulkan/vulkan.h>
  #define PROBE_VULKAN 1
  #endif
+diff --git a/templates/runtime/recomp_types.h b/templates/runtime/recomp_types.h
+index 4359a2c..fdc2914 100644
+--- a/templates/runtime/recomp_types.h
++++ b/templates/runtime/recomp_types.h
+@@ -164,13 +164,17 @@ extern uint32_t g_xbox_code_hi;
+ #  define RECOMP_TLS _Thread_local
+ #endif
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
+ extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
++#endif
+ 
+ /* x87 stack. Per-thread for the same reason the integer registers are:
+  * arguments are passed in st(0)/st(1) across call boundaries. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS double g_fp_stack[8];
+ extern RECOMP_TLS int g_fp_top;
++#endif
+ 
+ /**
+  * SEH frame pointer bridge.
+@@ -188,10 +192,14 @@ extern RECOMP_TLS int g_fp_top;
+  * Per-thread, because a TIB is. fs:[0] is the SEH chain head and fs:[4]
+  * reaches the CRT's per-thread data, so a single shared base makes every
+  * guest thread the same thread as far as the CRT is concerned. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_fs_base;
++#endif
+ #define XBOX_FS_BASE g_fs_base
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_seh_ebp;
++#endif
+ 
+ /* ---- non-local jumps (setjmp / longjmp) --------------------------------
+  *
+@@ -233,7 +241,9 @@ extern RECOMP_TLS uint32_t g_seh_ebp;
+ #include <setjmp.h>
+ jmp_buf *recomp_setjmp_slot(uint32_t buf_va);
+ int recomp_guest_longjmp(uint32_t buf_va, uint32_t value);
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_ebp;
++#endif
+ 
+ /* EFLAGS.DF, and the signed step the string instructions take because of it.
+  *
+@@ -247,7 +257,9 @@ extern RECOMP_TLS uint32_t g_ebp;
+  * be found by name, and the dashboard rebooted rather than showing a UI.
+  * memmove's overlapping case is the same instruction and the same bug.
+  */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS int g_df;
++#endif
+ #define RECOMP_DF_STEP(n) (g_df ? -(int32_t)(n) : (int32_t)(n))
+ 
+ /* EFLAGS as pushfd and popfd see it.
+@@ -266,7 +278,9 @@ extern RECOMP_TLS int g_df;
+  * Only popfd writes g_eflags. cli and sti do not update its IF bit (they
+  * have no lift that touches it), so a pushfd after them reports the IF of
+  * the last popfd image -- set, unless the guest popped it clear. */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint32_t g_eflags;
++#endif
+ #define RECOMP_EFL_WRITABLE 0x00247FD5u
+ static inline uint32_t recomp_pushfd(uint32_t known, uint32_t bits) {
+     return (g_eflags & ~(known | 0x400u)) | (bits & known) | 0x2u
+@@ -285,9 +299,11 @@ void xbox_Cpuid(uint32_t leaf, uint32_t subleaf, uint32_t out[4]);
+    above is: one guest routine can lift to several C functions, so a compare
+    and the FNSTSW that reads it can land in different bodies, and the control
+    word has to survive a call. (g_fp_stack/g_fp_top are declared above.) */
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS uint16_t g_fp_control_word;
+ extern RECOMP_TLS int g_fp_cmp;
+ extern RECOMP_TLS uint16_t g_fp_cc;
++#endif
+ /* x87 precision control (control word bits 8-9). The stack is double-backed,
+  * which matches PC=53 and is close enough for PC=64, but PC=24 -- what the
+  * Xbox runs with -- rounds every arithmetic result to float. A title that
+@@ -668,8 +684,10 @@ typedef union RecompXmm {
+ } RecompXmm;
+ #endif
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS RecompXmm g_xmm0, g_xmm1, g_xmm2, g_xmm3;
+ extern RECOMP_TLS RecompXmm g_xmm4, g_xmm5, g_xmm6, g_xmm7;
++#endif
+ 
+ /* -- construction -- */
+ 
+@@ -1324,8 +1342,10 @@ typedef union RecompMmx {
+ } RecompMmx;
+ #endif
+ 
++#if !defined(RECOMP_REGFILE)   /* the PS5: recomp_regfile.h */
+ extern RECOMP_TLS RecompMmx g_mm0, g_mm1, g_mm2, g_mm3;
+ extern RECOMP_TLS RecompMmx g_mm4, g_mm5, g_mm6, g_mm7;
++#endif
+ 
+ static inline RecompMmx MMX_ZERO(void) { RecompMmx r; r.q = 0; return r; }
+ 
