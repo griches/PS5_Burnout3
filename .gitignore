@@ -1,0 +1,7 @@
+/.deps/
+/build/
+/dist/
+/klog/
+/dump/
+/gamedata/
+.DS_Store

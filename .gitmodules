@@ -1,0 +1,7 @@
+[submodule "vendor/takedawn"]
+	path = vendor/takedawn
+	url = https://github.com/xenophobentx/takedawn.git
+[submodule "vendor/xboxrecomp"]
+	path = vendor/xboxrecomp
+	url = https://github.com/xenophobentx/xboxrecomp.git
+	branch = takedawn

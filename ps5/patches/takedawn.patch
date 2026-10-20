@@ -1,0 +1,24 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 47d43b6..d83a407 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -61,7 +61,9 @@ set(XBOXRECOMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xboxrecomp" CACHE PATH "Path
+ # Off Windows the kernel links OpenSSL::Crypto but finds it in its own
+ # subdirectory, where the imported target is invisible to the executable;
+ # finding it here first puts it in scope for both (as blinx2-recomp does).
+-if(NOT WIN32 AND NOT ANDROID)
++# The PlayStation 5 (the payload SDK's toolchain sets PS5) has none either:
++# its crypto is the portable C, as on Android.
++if(NOT WIN32 AND NOT ANDROID AND NOT PS5)
+     find_package(OpenSSL REQUIRED)
+ endif()
+ 
+@@ -97,7 +99,7 @@ add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
+ add_subdirectory(src/game)
+ 
+ # The PS2 driving layout's unit test (src/game/controls.h, BO-106).
+-if(NOT ANDROID)
++if(NOT ANDROID AND NOT PS5)
+     add_subdirectory(tests/controls)
+     # Which sound goes to which mixer bus (src/game/mixer.c, BO-114).
+     add_subdirectory(tests/mixer)

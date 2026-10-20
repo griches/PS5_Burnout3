@@ -1,0 +1,569 @@
+diff --git a/src/d3d/CMakeLists.txt b/src/d3d/CMakeLists.txt
+index 1f0214c..37ae4d7 100644
+--- a/src/d3d/CMakeLists.txt
++++ b/src/d3d/CMakeLists.txt
+@@ -58,8 +58,8 @@ else()
+         nv2a_pcache_psdef.c
+     )
+     find_package(SDL2 REQUIRED)
+-    if(WIN32 OR ANDROID)
+-        # Windows + Vulkan, and Android: no OpenGL layer (d3d8_gl.c is desktop
++    if(WIN32 OR ANDROID OR PS5)
++        # Windows + Vulkan, Android and the PlayStation 5: no OpenGL layer (d3d8_gl.c is desktop
+         # OpenGL 3.3 through libepoxy); the pushbuffer executor draws through
+         # nv2a_pb_vulkan.c alone.
+         target_link_libraries(xbox_d3d8 PUBLIC platform SDL2::SDL2)
+@@ -85,8 +85,10 @@ else()
+             ${CMAKE_CURRENT_SOURCE_DIR}/../kernel ${CMAKE_CURRENT_SOURCE_DIR}/..)
+         target_link_libraries(xbox_d3d8 PUBLIC Vulkan::Vulkan glslang::glslang
+                               glslang::glslang-default-resource-limits)
+-        if(ANDROID)
+-            # Android: every Vulkan call goes through pointers filled from the
++        if(ANDROID OR PS5)
++            # Android (and the PlayStation 5, whose driver, RADV, is linked
++            # into the title and answers through vk_icdGetInstanceProcAddr):
++            # every Vulkan call goes through pointers filled from the
+             # loader android_vk.c opens (the system's, or a replacement driver
+             # through libadrenotools). The header is force-included, so the
+             # Vulkan sources are the ones every host compiles. XR_ANDROID_VK_H
+@@ -95,6 +97,8 @@ else()
+                 CACHE INTERNAL "the Android Vulkan dispatch header")
+             target_sources(xbox_d3d8 PRIVATE android_vk.c)
+             target_compile_options(xbox_d3d8 PRIVATE -include ${XR_ANDROID_VK_H})
++        endif()
++        if(ANDROID)
+             # libadrenotools, built for the same ABI: <prefix>/include and
+             # <prefix>/lib/libadrenotools.a, liblinkernsbypass.a. Its hook
+             # libraries go into the APK beside the game's. Empty: the system
+@@ -115,7 +119,7 @@ else()
+         # A static glslang (the Steam Runtime SDK's) is C++: its runtime
+         # comes with it, as this C program's link would not add it.
+         # The GLSL emitters' output through glslang (no device needed).
+-        if(NOT WIN32)
++        if(NOT WIN32 AND NOT PS5)
+             add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/d3d8_glsl_split
+                              ${CMAKE_CURRENT_BINARY_DIR}/d3d8_glsl_split)
+         endif()
+@@ -128,7 +132,7 @@ else()
+                 # and with llvm-mingw's libc++, linked statically so the .exe
+                 # needs no libc++.dll.
+                 target_link_libraries(xbox_d3d8 PUBLIC "-Wl,-Bstatic -lc++ -lunwind -Wl,-Bdynamic")
+-            elseif(ANDROID)
++            elseif(ANDROID OR PS5)
+                 # Built without the optimizer too; the C++ runtime is the
+                 # NDK's (ANDROID_STL), which the C++ link brings, and bionic
+                 # has no separate libpthread.
+diff --git a/src/d3d/android_vk.c b/src/d3d/android_vk.c
+index efa160c..c1d3e9b 100644
+--- a/src/d3d/android_vk.c
++++ b/src/d3d/android_vk.c
+@@ -16,13 +16,15 @@
+  * file; no root, nothing outside the app. Without the variables, or built
+  * without libadrenotools, the loader is the system's.
+  */
+-#if defined(__ANDROID__)
++#if defined(__ANDROID__) || defined(__PROSPERO__)
+ 
+ #include "android_vk.h"
+ 
+ #include <SDL.h>
++#if defined(__ANDROID__)
+ #include <SDL_system.h>
+ #include <dlfcn.h>
++#endif
+ #include <pthread.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -38,6 +40,19 @@ static PFN_vkGetInstanceProcAddr s_gipa;
+ static char s_driver[256] = "system";
+ static int s_failed;
+ 
++#if defined(__PROSPERO__)
++/* The PlayStation 5: RADV is linked into the title, and its own entry point
++ * stands in for the loader's vkGetInstanceProcAddr. */
++extern VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance,
++                                                                          const char *name);
++
++static void open_loader(void)
++{
++    s_gipa = vk_icdGetInstanceProcAddr;
++    snprintf(s_driver, sizeof s_driver, "RADV (linked in)");
++}
++#else
++
+ /* TU_DEBUG defaults, asked before the driver is opened; a TU_DEBUG the player
+  * set (env.txt, even empty) is left as it is.
+  *
+@@ -157,6 +172,7 @@ static void open_loader(void)
+     if (!s_gipa)
+         XR_ERROR( "[vulkan] no Vulkan loader: %s\n", dlerror());
+ }
++#endif /* __PROSPERO__ */
+ 
+ const char *xr_android_vk_driver(void)
+ {
+@@ -257,6 +273,6 @@ __attribute__((constructor)) static void boot_pointers(void)
+     xr_vkCreateInstance = boot_vkCreateInstance;
+ }
+ 
+-#else
++#else /* neither Android nor the PlayStation 5 */
+ typedef int xr_android_vk_unused;
+ #endif
+diff --git a/src/d3d/android_vk.h b/src/d3d/android_vk.h
+index f7f7d24..aef030b 100644
+--- a/src/d3d/android_vk.h
++++ b/src/d3d/android_vk.h
+@@ -23,11 +23,15 @@
+  *
+  * Which driver: android_vk.c reads RECOMP_ANDROID_DRIVER_DIR and
+  * RECOMP_ANDROID_DRIVER_NAME (android_host.h).
++ *
++ * The PlayStation 5 uses the same table: there is no loader at all, the driver
++ * (RADV) is linked into the title and its entry point,
++ * vk_icdGetInstanceProcAddr, is what android_vk.c hands out.
+  */
+ #ifndef RECOMP_ANDROID_VK_H
+ #define RECOMP_ANDROID_VK_H
+ 
+-#if defined(__ANDROID__)
++#if defined(__ANDROID__) || defined(__PROSPERO__)
+ 
+ #ifndef VK_NO_PROTOTYPES
+ #define VK_NO_PROTOTYPES 1
+@@ -319,5 +323,5 @@ int xr_android_vk_driver_failed(void);
+ #define vkWaitForPresentKHR xr_vkWaitForPresentKHR
+ #define vkWaitSemaphores xr_vkWaitSemaphores
+ 
+-#endif /* __ANDROID__ */
++#endif /* __ANDROID__ || __PROSPERO__ */
+ #endif /* RECOMP_ANDROID_VK_H */
+diff --git a/src/input/CMakeLists.txt b/src/input/CMakeLists.txt
+index 3819802..d1c9bd2 100644
+--- a/src/input/CMakeLists.txt
++++ b/src/input/CMakeLists.txt
+@@ -60,7 +60,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/input_keyboard
+ if(XR_SDL_HOST)
+     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/input_keyboard_sdl
+                      ${CMAKE_CURRENT_BINARY_DIR}/input_keyboard_sdl)
+-    if(NOT WIN32 AND NOT ANDROID)
++    if(NOT WIN32 AND NOT ANDROID AND NOT PS5)
+         # The SDL pad backend's rumble against a virtual controller: no gap
+         # while held, an end by itself, stopped at every exit.
+         add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/input_rumble_sdl
+diff --git a/src/kernel/CMakeLists.txt b/src/kernel/CMakeLists.txt
+index 6989a3f..3989b8c 100644
+--- a/src/kernel/CMakeLists.txt
++++ b/src/kernel/CMakeLists.txt
+@@ -74,8 +74,8 @@ if(WIN32)
+     # include path that "platform/xbox_winnt.h" resolves against.
+     # advapi32: the registry (xbox_report.c reads the OS and CPU names).
+     target_link_libraries(xbox_kernel PUBLIC platform kernel32 bcrypt advapi32)
+-elseif(ANDROID)
+-    # Android: the platform layer alone. The crypto exports (kernel_crypto.c)
++elseif(ANDROID OR PS5)
++    # Android and the PlayStation 5: the platform layer alone. The crypto exports (kernel_crypto.c)
+     # are portable C, and the NDK has no OpenSSL to link.
+     target_link_libraries(xbox_kernel PUBLIC platform)
+ else()
+diff --git a/src/kernel/kernel_bridge.c b/src/kernel/kernel_bridge.c
+index 3219a6d..c769c65 100644
+--- a/src/kernel/kernel_bridge.c
++++ b/src/kernel/kernel_bridge.c
+@@ -40,6 +40,9 @@
+ #ifndef _WIN32
+ #include <pthread.h>
+ #endif
++#if defined(__FreeBSD__)
++#include <pthread_np.h>   /* pthread_set_name_np */
++#endif
+ /* stdlib.h is load-bearing, not tidiness. Without it C89 implicit declaration
+  * makes malloc return `int`, so bridge_spawn_thread truncated its heap pointer
+  * to 32 bits and sign-extended it into a `struct bridge_thread_start *`. Every
+@@ -551,6 +554,8 @@ static void thread_set_os_name(const char *name)
+     set_desc(GetCurrentThread(), w);
+ #elif defined(__APPLE__)
+     pthread_setname_np(name);
++#elif defined(__FreeBSD__)
++    pthread_set_name_np(pthread_self(), name);
+ #else
+     pthread_setname_np(pthread_self(), name);
+ #endif
+diff --git a/src/kernel/xbox_memory_layout.c b/src/kernel/xbox_memory_layout.c
+index ffb4b51..d8f07e0 100644
+--- a/src/kernel/xbox_memory_layout.c
++++ b/src/kernel/xbox_memory_layout.c
+@@ -3176,7 +3176,7 @@ BOOL xbox_MemoryLayoutInit(const void *xbe_data, size_t xbe_size)
+          * otherwise run to 0xE8000000 and hold 0x80000000 against it. */
+         if (g_span_size > XBOX_CONTIG_BASE)
+             g_span_size = XBOX_CONTIG_BASE;
+-#if defined(__linux__)
++#if defined(__linux__) || defined(__PROSPERO__)
+         {
+             /* The whole 4 GB guest window, held as a placeholder that the
+              * fixed views replace (win32_compat.c, xbox_compat_guest_window):
+diff --git a/src/overlay/CMakeLists.txt b/src/overlay/CMakeLists.txt
+index 3113078..c43f7b5 100644
+--- a/src/overlay/CMakeLists.txt
++++ b/src/overlay/CMakeLists.txt
+@@ -60,7 +60,7 @@ if(APPLE)
+ elseif(WIN32)
+     target_sources(xbox_overlay PRIVATE xbox_update_http_win.c)
+     target_link_libraries(xbox_overlay PUBLIC winhttp)
+-elseif(ANDROID)
++elseif(ANDROID OR PS5)
+     target_sources(xbox_overlay PRIVATE xbox_update_http_none.c)
+ else()
+     target_sources(xbox_overlay PRIVATE xbox_update_http_posix.c)
+@@ -71,7 +71,7 @@ if(XBOXRECOMP_HAVE_VULKAN)
+         overlay_vulkan.cpp
+         ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp)
+     target_link_libraries(xbox_overlay PUBLIC Vulkan::Vulkan)
+-    if(ANDROID)
++    if(ANDROID OR PS5)
+         # Vulkan through android_vk.h's pointers (src/d3d/CMakeLists.txt),
+         # Dear ImGui's backend included.
+         target_compile_options(xbox_overlay PRIVATE -include ${XR_ANDROID_VK_H})
+diff --git a/src/platform/mmio_decode.h b/src/platform/mmio_decode.h
+index fc4fa39..252d157 100644
+--- a/src/platform/mmio_decode.h
++++ b/src/platform/mmio_decode.h
+@@ -46,6 +46,25 @@ typedef ucontext_t *mmio_ctx_t;
+ #define MMIO_CTX_EFL(c) (*(uint64_t *)&(c)->uc_mcontext.gregs[17])   /* REG_EFL */
+ #define MMIO_DECODE_X86 1
+ #define MMIO_POSIX_X86 1
++#elif defined(__FreeBSD__) && defined(__x86_64__)
++/* FreeBSD's signal context (the PlayStation 5). */
++#include <ucontext.h>
++typedef ucontext_t *mmio_ctx_t;
++#define MMIO_CTX_RIP(c) (*(uint64_t *)&(c)->uc_mcontext.mc_rip)
++#define MMIO_CTX_EFL(c) (*(uint64_t *)&(c)->uc_mcontext.mc_rflags)
++#define MMIO_DECODE_X86 1
++#define MMIO_POSIX_X86 1
++#define MMIO_POSIX_FREEBSD 1
++#endif
++
++/* The bytes of the instruction at a host pc. The PlayStation 5's code is
++ * execute-only, so it is read from a copy the port ships beside the program
++ * (xr_code_bytes: NULL for a pc outside it, and the access is not decoded). */
++#if defined(__PROSPERO__)
++const uint8_t *xr_code_bytes(uintptr_t pc);
++#define MMIO_CODE(pc) xr_code_bytes(pc)
++#else
++#define MMIO_CODE(pc) ((const uint8_t *)(pc))
+ #endif
+ 
+ #if defined(MMIO_DECODE_X86)
+@@ -54,7 +73,23 @@ typedef ucontext_t *mmio_ctx_t;
+ typedef uint64_t (*mmio_read_fn)(void *dev, uint32_t off, int size);
+ typedef void     (*mmio_write_fn)(void *dev, uint32_t off, uint64_t val, int size);
+ 
+-#if defined(MMIO_POSIX_X86)
++#if defined(MMIO_POSIX_FREEBSD)
++static inline uint64_t *mmio_ctx_reg(mmio_ctx_t c, int reg)
++{
++    mcontext_t *m = &c->uc_mcontext;
++    switch (reg & 0xF) {
++    case 0:  return (uint64_t *)&m->mc_rax;   case 1:  return (uint64_t *)&m->mc_rcx;
++    case 2:  return (uint64_t *)&m->mc_rdx;   case 3:  return (uint64_t *)&m->mc_rbx;
++    case 4:  return (uint64_t *)&m->mc_rsp;   case 5:  return (uint64_t *)&m->mc_rbp;
++    case 6:  return (uint64_t *)&m->mc_rsi;   case 7:  return (uint64_t *)&m->mc_rdi;
++    case 8:  return (uint64_t *)&m->mc_r8;    case 9:  return (uint64_t *)&m->mc_r9;
++    case 10: return (uint64_t *)&m->mc_r10;   case 11: return (uint64_t *)&m->mc_r11;
++    case 12: return (uint64_t *)&m->mc_r12;   case 13: return (uint64_t *)&m->mc_r13;
++    case 14: return (uint64_t *)&m->mc_r14;   case 15: return (uint64_t *)&m->mc_r15;
++    default: return NULL;
++    }
++}
++#elif defined(MMIO_POSIX_X86)
+ static inline uint64_t *mmio_ctx_reg(mmio_ctx_t c, int reg)
+ {
+     /* rax rcx rdx rbx rsp rbp rsi rdi r8..r15 as gregs indices. */
+@@ -188,13 +223,13 @@ static inline uint64_t mmio_imm(const uint8_t *p, int size, int *len)
+ static inline int mmio_emulate(mmio_ctx_t ctx, uint32_t off, void *dev,
+                                mmio_read_fn rd, mmio_write_fn wr)
+ {
+-    const uint8_t *ip = (const uint8_t *)(uintptr_t)MMIO_CTX_RIP(ctx);
++    const uint8_t *ip = MMIO_CODE((uintptr_t)MMIO_CTX_RIP(ctx));
+     int prefix = 0, has66 = 0, rex = 0, has_rex = 0;
+     const uint8_t *op;
+     int size, rex_w, rex_r, rex_b, mlen, reg, ilen, alu;
+     uint64_t m, v, imm;
+ 
+-    if (!rd || !wr)
++    if (!rd || !wr || !ip)
+         return 0;
+ 
+     for (;;) {
+@@ -328,7 +363,7 @@ static inline int mmio_emulate_host(void *uc, uint32_t off, void *dev,
+ #endif /* MMIO_DECODE_X86 */
+ 
+ /* POSIX hosts whose trapped MMIO is decoded: arm64 (mmio_decode_a64.h) and
+- * x86-64 Linux (this file). */
++ * x86-64 Linux and FreeBSD (this file). */
+ #if !defined(_WIN32) && (defined(__aarch64__) || defined(MMIO_POSIX_X86))
+ #define MMIO_POSIX_TRAP 1
+ #endif
+diff --git a/src/platform/win32_compat.c b/src/platform/win32_compat.c
+index b53b93b..3914d1f 100644
+--- a/src/platform/win32_compat.c
++++ b/src/platform/win32_compat.c
+@@ -41,6 +41,12 @@
+ #include <sys/stat.h>
+ #include <mach/mach.h>
+ #include <mach/mach_vm.h>
++#elif defined(__PROSPERO__)
++/* The PlayStation 5: guest memory in direct memory (the platform layer's
++ * shared-memory objects and reserved ranges, ps5platform/shm.h), threads
++ * named through pthread_np.h */
++#include <ps5platform/shm.h>
++#include <pthread_np.h>
+ #else
+ #include <sys/sysinfo.h>
+ #endif
+@@ -149,6 +155,8 @@ static uintptr_t gc_context_pc(void *uctx)
+     return (uintptr_t)uc->uc_mcontext.pc;
+ #elif defined(__linux__) && defined(__x86_64__)
+     return (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
++#elif defined(__FreeBSD__) && defined(__x86_64__)
++    return (uintptr_t)uc->uc_mcontext.mc_rip;
+ #else
+     (void)uc;
+     return 0;   /* never guest code: hand-overs wait for a checkpoint */
+@@ -624,6 +632,10 @@ typedef enum { K_EVENT, K_SEM, K_MUTEX, K_THREAD, K_TIMER, K_HEAP,
+ typedef struct w32_object {
+     w32_kind        kind;
+     LONG            refcount;
++#if defined(__PROSPERO__)
++    /* file mapping: its direct memory */
++    struct ps5_shm  shm;
++#endif
+     pthread_mutex_t lock;
+     pthread_cond_t  cond;
+ 
+@@ -1719,12 +1731,106 @@ static void gw_mark(const void *a, size_t n, int placeholder)
+         else             s_gw_bits[i >> 3] &= (uint8_t)~(1u << (i & 7));
+     }
+ }
+-#else
++#elif !defined(__PROSPERO__)
+ void xbox_compat_guest_window(void *lo, size_t size) { (void)lo; (void)size; }
+ #endif
+ 
++#if defined(__PROSPERO__)
++/*
++ * The PlayStation 5. A title's anonymous mappings are charged to its small
++ * flexible budget, and every view of a POSIX shared-memory object again, so
++ * none of the guest's memory is mmap'd: a reservation is a reserved range of
++ * the platform layer (address space nothing else is given), memory committed in
++ * it is direct memory in 64 KiB units, and a file mapping is one direct-memory
++ * allocation, which can be mapped at any number of addresses for nothing (the
++ * 28 RAM mirrors). The 4 GB guest window is one reservation
++ * (xbox_compat_guest_window); views and commits at fixed addresses inside it
++ * replace that reservation, and freeing them leaves it reserved again, as the
++ * Linux placeholder does.
++ */
++static uintptr_t s_ps5_window_lo, s_ps5_window_hi;
++int view_lookup(const void *addr, void **base_out, size_t *len_out);
++
++void xbox_compat_guest_window(void *lo, size_t size)
++{
++    s_ps5_window_lo = (uintptr_t)lo;
++    s_ps5_window_hi = (uintptr_t)lo + size;
++}
++
++static int ps5_in_window(const void *a, size_t n)
++{
++    uintptr_t x = (uintptr_t)a;
++    return s_ps5_window_hi && x >= s_ps5_window_lo && x + n <= s_ps5_window_hi;
++}
++
++static int ps5_shm_prot(int prot)
++{
++    return (prot & PROT_READ ? PS5_SHM_READ : 0) | (prot & PROT_WRITE ? PS5_SHM_WRITE : 0);
++}
++
++static LPVOID ps5_virtual_alloc(LPVOID address, SIZE_T size, DWORD type, DWORD protect)
++{
++    int prot = prot_from_page(protect);
++    void *base = address;
++
++    if (!size) {
++        SetLastError(ERROR_INVALID_PARAMETER);
++        return NULL;
++    }
++    if (address && ps5_in_window(address, size)) {
++        /* inside the guest window: commit (a reservation alone is already there) */
++        if ((type & MEM_COMMIT) && ps5_vrange_commit(address, size, prot) != 0) {
++            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
++            return NULL;
++        }
++        if (type & MEM_RESERVE)
++            view_register(address, size);
++        return address;
++    }
++    if (address) {
++        /* a fixed address outside anything reserved: refused, as Win32 does */
++        if (!(type & MEM_RESERVE) && view_lookup(address, NULL, NULL)) {
++            if (ps5_vrange_commit(address, size, prot) == 0)
++                return address;
++        }
++        if (ps5_vrange_reserve_at(address, size) != 0) {
++            SetLastError(ERROR_INVALID_ADDRESS);
++            return NULL;
++        }
++    } else if (ps5_vrange_reserve(size, NULL, 0x10000, &base) != 0) {
++        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
++        return NULL;
++    }
++    if ((type & MEM_COMMIT) && ps5_vrange_commit(base, size, prot) != 0) {
++        ps5_vrange_release(base, size);
++        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
++        return NULL;
++    }
++    view_register(base, size);
++    return base;
++}
++
++static BOOL ps5_virtual_free(LPVOID address, SIZE_T size, DWORD type)
++{
++    if (type & MEM_RELEASE) {
++        size_t len = view_take(address);
++        if (size == 0) size = len;
++        if (size == 0) return FALSE;
++        if (ps5_in_window(address, size))
++            return ps5_vrange_decommit(address, size) == 0;   /* reserved again */
++        return ps5_vrange_release(address, size) == 0;
++    }
++    if (type & MEM_DECOMMIT)
++        return ps5_vrange_decommit(address, size) == 0;
++    return TRUE;
++}
++#endif /* __PROSPERO__ */
++
+ LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DWORD protect)
+ {
++#if defined(__PROSPERO__)
++    return ps5_virtual_alloc(address, size, allocationType, protect);
++#endif
+     int prot  = prot_from_page(protect);
+     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+ 
+@@ -1787,6 +1893,9 @@ LPVOID VirtualAlloc(LPVOID address, SIZE_T size, DWORD allocationType, DWORD pro
+ 
+ BOOL VirtualFree(LPVOID address, SIZE_T size, DWORD freeType)
+ {
++#if defined(__PROSPERO__)
++    return ps5_virtual_free(address, size, freeType);
++#endif
+     if (freeType & MEM_RELEASE) {
+         /* Win32 MEM_RELEASE passes size 0 and frees the whole allocation, so
+          * the length comes from the registry VirtualAlloc filled in. Returning
+@@ -2254,6 +2363,21 @@ HANDLE CreateFileMappingA(HANDLE file, LPSECURITY_ATTRIBUTES sa, DWORD protect,
+     SIZE_T size = ((SIZE_T)maxSizeHigh << 32) | maxSizeLow;
+     if (size == 0) { SetLastError(ERROR_INVALID_PARAMETER); return NULL; }
+ 
++#if defined(__PROSPERO__)
++    {
++        struct ps5_shm shm;
++        (void)name;
++        if (ps5_shm_create(size, &shm) != 0) {
++            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
++            return NULL;
++        }
++        w32_object *o = obj_alloc(K_FILEMAP);
++        o->fd       = -1;
++        o->shm      = shm;
++        o->map_size = size;
++        return (HANDLE)o;
++    }
++#endif
+     int fd = anon_map_fd(name);
+     if (fd < 0) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return NULL; }
+     if (ftruncate(fd, (off_t)size) != 0) {
+@@ -2286,6 +2410,28 @@ LPVOID MapViewOfFileEx(HANDLE mapping, DWORD access, DWORD offHigh, DWORD offLow
+     int prot   = PROT_READ | ((access != FILE_MAP_READ) ? PROT_WRITE : 0);
+     int flags  = MAP_SHARED;
+ 
++#if defined(__PROSPERO__)
++    {
++        /* Inside the guest window, exactly there (the reservation is ours);
++         * elsewhere the address is a hint that must be met. */
++        void *view = NULL;
++        int fixed = baseAddr && ps5_in_window(baseAddr, len);
++        (void)flags;
++        if (ps5_shm_map(&o->shm, (size_t)off, len, baseAddr, ps5_shm_prot(prot),
++                        fixed ? PS5_SHM_FIXED : 0, &view) != 0) {
++            SetLastError(baseAddr ? ERROR_INVALID_ADDRESS : ERROR_NOT_ENOUGH_MEMORY);
++            return NULL;
++        }
++        if (baseAddr && view != baseAddr) {
++            ps5_shm_unmap(view, len, 0);
++            SetLastError(ERROR_INVALID_ADDRESS);
++            return NULL;
++        }
++        view_register(view, len);
++        return view;
++    }
++#endif
++
+     /* Win32 MapViewOfFileEx *fails* when the requested address is unavailable.
+      * Plain MAP_FIXED does the opposite: it silently unmaps whatever is there
+      * and succeeds. The Xbox memory model asks for 28 mirror views at computed
+@@ -2337,6 +2483,10 @@ BOOL UnmapViewOfFile(LPCVOID baseAddr)
+ {
+     size_t len = view_take(baseAddr);
+     if (len == 0) return FALSE;
++#if defined(__PROSPERO__)
++    return ps5_shm_unmap((void *)baseAddr, len,
++                         ps5_in_window(baseAddr, len) ? PS5_SHM_KEEP_RESERVED : 0) == 0;
++#endif
+     return munmap((void *)baseAddr, len) == 0;
+ }
+ 
+@@ -2425,6 +2575,13 @@ BOOL GlobalMemoryStatusEx(LPMEMORYSTATUSEX b)
+     b->ullAvailPhys     = avail;
+     b->ullTotalPageFile = b->ullTotalPhys + (ULONGLONG)swap.xsu_total;
+     b->ullAvailPageFile = b->ullAvailPhys + (ULONGLONG)swap.xsu_avail;
++#elif defined(__PROSPERO__)
++    /* A title's share of the console: what the Xbox's 64 MB game asks about
++     * this only to size caches */
++    b->ullTotalPhys     = 4ULL << 30;
++    b->ullAvailPhys     = 2ULL << 30;
++    b->ullTotalPageFile = b->ullTotalPhys;
++    b->ullAvailPageFile = b->ullAvailPhys;
+ #else
+     struct sysinfo si;
+     if (sysinfo(&si) != 0) return FALSE;
+diff --git a/src/video/CMakeLists.txt b/src/video/CMakeLists.txt
+index bf40656..683de11 100644
+--- a/src/video/CMakeLists.txt
++++ b/src/video/CMakeLists.txt
+@@ -34,9 +34,11 @@ else()
+         # The window's Vulkan swapchain for the Vulkan backend.
+         target_sources(xbox_video PRIVATE fb_present_vulkan.c)
+         target_link_libraries(xbox_video PUBLIC Vulkan::Vulkan)
+-        if(ANDROID)
++        if(ANDROID OR PS5)
+             # Vulkan through android_vk.h's pointers (src/d3d/CMakeLists.txt).
+             target_compile_options(xbox_video PRIVATE -include ${XR_ANDROID_VK_H})
++        endif()
++        if(ANDROID)
+             # The display's refresh times from the Choreographer.
+             target_sources(xbox_video PRIVATE android_vsync.c)
+             # The 60 fps frame rate and the ADPF performance hints.
+diff --git a/src/video/host_probe.c b/src/video/host_probe.c
+index 983a3fb..bf68cb1 100644
+--- a/src/video/host_probe.c
++++ b/src/video/host_probe.c
+@@ -19,7 +19,9 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
+-#if defined(XBOXRECOMP_HAVE_VULKAN) && !defined(__APPLE__) && !defined(__ANDROID__)
++/* The PlayStation 5 has one GPU and its driver is linked in: nothing to probe. */
++#if defined(XBOXRECOMP_HAVE_VULKAN) && !defined(__APPLE__) && !defined(__ANDROID__) \
++    && !defined(__PROSPERO__)
+ #include <vulkan/vulkan.h>
+ #define PROBE_VULKAN 1
+ #endif
