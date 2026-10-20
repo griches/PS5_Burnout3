@@ -51,7 +51,7 @@ index c696deb..bd8c3fa 100644
  
  #define M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 diff --git a/src/game/main.c b/src/game/main.c
-index 81f12e2..89769e3 100644
+index 81f12e2..7f9d9fa 100644
 --- a/src/game/main.c
 +++ b/src/game/main.c
 @@ -107,9 +107,11 @@ extern void xbox_InputPanicStop(int wait_ms);
@@ -66,7 +66,41 @@ index 81f12e2..89769e3 100644
  extern ptrdiff_t g_xbox_mem_offset;
  
  extern void xbe_entry_point(void);
-@@ -3279,9 +3281,17 @@ int main(int argc, char **argv)
+@@ -3137,7 +3139,33 @@ int main(int argc, char **argv)
+     /* The title draws 448 lines (clip y=16..464) into its 640x480 buffer and
+      * leaves the rest black, for a TV's overscan to hide; show the picture
+      * the way that TV did (Metal and Vulkan presenters). */
++#if defined(__PROSPERO__)
++    /* The PlayStation 5: the whole picture, as the settings below want it. */
++    env_default("RECOMP_PRESENT_OVERSCAN", "off");
++    /* The PlayStation 5's first start, as the port's owner set it on his
++     * console (2026-10-20): 16:9 with the HUD fix, 4x inside (2560x1920),
++     * FXAA with light sharpening, half the game's motion blur, 60 fps crash
++     * cameras and split screen, texture sharpness following the scale,
++     * vehicles at the farthest detail distance and scenery far. Defaults
++     * like the others: a settings.toml that names a value keeps it, and the
++     * overlay's Reset comes back here. */
++    env_default("RECOMP_PRESENT_FULLSCREEN", "1");
++    env_default("RECOMP_DISPLAY_WIDESCREEN", "1");
++    env_default("RECOMP_GFX_HUD_FIX", "1");
++    env_default("RECOMP_PRESENT_FILTER", "nearest");
++    env_default("RECOMP_RENDER_SCALE", "4");
++    env_default("RECOMP_GFX_AA", "fxaa");
++    env_default("RECOMP_GFX_SHARPEN", "0.1");
++    env_default("RECOMP_GFX_MOTION_BLUR", "0.5");
++    env_default("RECOMP_GFX_CRASH_60FPS", "1");
++    env_default("RECOMP_GFX_SPLIT_60FPS", "1");
++    env_default("RECOMP_GFX_LOD_BIAS", "auto");
++    env_default("RECOMP_GFX_VEHICLE_DETAIL", "farthest");
++    env_default("RECOMP_GFX_SCENERY_DETAIL", "far");
++    env_default("RECOMP_INPUT_FACE_LAYOUT", "xbox");
++#else
+     env_default("RECOMP_PRESENT_OVERSCAN", "crop");
++#endif
+ #if !defined(__ANDROID__)
+     /* The picture of a first start (BO-103). These are defaults like the
+      * others: a settings.toml that names a value keeps it, a RECOMP_*
+@@ -3279,9 +3307,17 @@ int main(int argc, char **argv)
       * a util clamp does nothing on amd-pstate-epp). A steady 60 in races
       * at about 10 W, against 14 W spinning throughout. */
      env_default("RECOMP_VBLANK_SYNC", "display");
