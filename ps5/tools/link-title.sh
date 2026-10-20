@@ -199,5 +199,21 @@ cp "$root/vendor/xboxrecomp/LICENSE" "$app/licenses/xboxrecomp-LICENSE.txt"
 [[ -f $root/vendor/xboxrecomp/NOTICE ]] && cp "$root/vendor/xboxrecomp/NOTICE" "$app/licenses/xboxrecomp-NOTICE.txt"
 [[ -d $root/vendor/xboxrecomp/LICENSES ]] && cp -R "$root/vendor/xboxrecomp/LICENSES/." "$app/licenses/xboxrecomp-LICENSES/"
 cp "$root/.deps/glslang/LICENSE.txt" "$app/licenses/glslang-LICENSE.txt"
+for third in imgui smaa dr_libs stb_vorbis dejavu roboto_condensed; do
+    for text in "$root/vendor/xboxrecomp/third_party/$third"/{LICENSE,LICENSE.txt,LICENSE.md,OFL.txt}; do
+        [[ -f $text ]] && cp "$text" "$app/licenses/$third-$(basename "$text")"
+    done
+done
+cp "$root/licenses/GPL-3.0.txt" "$app/licenses/GPL-3.0.txt"
+cp "$root/LICENSING.md" "$app/licenses/LICENSING.md"
+# What this build was made from (the GPL's offer of source)
+{
+    echo "Burnout 3 for PlayStation 5: https://github.com/griches/PS5_Burnout3"
+    echo "port $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "takedawn $(git -C "$root/vendor/takedawn" rev-parse --short HEAD 2>/dev/null || echo unknown) + ps5/patches/takedawn.patch"
+    echo "xboxrecomp $(git -C "$root/vendor/xboxrecomp" rev-parse --short HEAD 2>/dev/null || echo unknown) + ps5/patches/xboxrecomp.patch"
+    echo "SDL release-2.32.10, glslang 16.6.0, RADV ${archive_revision:-unknown}"
+    echo "The translated game code is made from the player's own default.xbe and is not part of the source."
+} > "$app/licenses/SOURCE.txt"
 cp "$root/.deps/SDL2/LICENSE.txt" "$app/licenses/SDL2-LICENSE.txt"
 cp "$vulkan/LICENSE" "$app/licenses/PS5_Vulkan-LICENSE.txt"

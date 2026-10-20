@@ -5,3 +5,11 @@
 /dump/
 /gamedata/
 .DS_Store
+
+# never game files or test switches
+env.txt
+args.txt
+*.iso
+*.xiso
+*.xbe
+*.img

@@ -9,8 +9,10 @@
  * A title sees its own folder (/app0, which is /data/homebrew/<TITLE_ID>) and
  * nothing else of /data. The working folder starts there (ps5/src/paths.c):
  *
+ *   /app0/dump/                 your disc image (.iso), installed on the first start
+ *                               (ps5/src/firstrun.c)
  *   /app0/Burnout 3 Takedown/   the game's files from your disc (default.xbe, Data/,
- *                               Tracks/, ...): Takedawn runs from them as a checkout
+ *                               Tracks/, ...), and /app0/.complete, the installer's mark
  *   /app0/userdata/             saves, settings.toml, the log (XDG_DATA_HOME, HOME)
  *   /app0/cache/                the shader cache (XDG_CACHE_HOME)
  *   /app0/env.txt               optional: NAME=value lines for the environment
@@ -59,21 +61,29 @@ leave(void)
 }
 
 /* Takedawn's main with the console's arguments: no setup window (there is no
- * other program to start; the data is the folder above), then whatever
+ * other program to start), the data in /app0 (which needs the installer's
+ * marker: ps5/src/firstrun.c puts it there on the first start), then whatever
  * /app0/args.txt has, one argument a line. */
 int __real_main(int argc, char **argv, char **envp);
+int ps5_first_run(void);
 
 int
 __wrap_main(int argc, char **argv, char **envp)
 {
-   static char no_setup[] = "--no-setup";
+   static char no_setup[] = "--no-setup", data[] = "--data", title_dir[] = TITLE_DIR;
    static char extra[16][256];
    char *args[64];
    int count = 0, lines = 0;
    FILE *file;
 
+   if (ps5_first_run() != 0) {
+      sleep(4);   /* the notification stays up while the title closes */
+      return 0;
+   }
    args[count++] = argc > 0 ? argv[0] : "eboot.bin";
    args[count++] = no_setup;
+   args[count++] = data;
+   args[count++] = title_dir;
    for (int i = 1; i < argc && count < 40; i++)
       args[count++] = argv[i];
    if ((file = fopen(TITLE_DIR "/args.txt", "r")) != NULL) {

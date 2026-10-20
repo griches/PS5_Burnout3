@@ -22,6 +22,29 @@ index 47d43b6..d83a407 100644
      add_subdirectory(tests/controls)
      # Which sound goes to which mixer bus (src/game/mixer.c, BO-114).
      add_subdirectory(tests/mixer)
+diff --git a/config/patches.json b/config/patches.json
+index 9b75d2c..d4a9f2c 100644
+--- a/config/patches.json
++++ b/config/patches.json
+@@ -940,6 +940,18 @@
+       "kind": "mark",
+       "name": "tut_film",
+       "note": "sub_0006BC40 (the front-end state that plays a mode's training film, TrD_xxx / TrC_xxx), the `push 0` before its call of sub_00086F70 (film id [0x463C48], caption string [0x463C4C], ...): the byte argument that becomes the film page's 'skippable' flag (page 0x55CB88 + 0xC). The title pushes 0 here, so no button skips the film; the mark makes it 1, and A or START leave through the page's own exit (src/game/tutorial.c)."
++    },
++    {
++      "va": "0x00077F27",
++      "kind": "mark",
++      "name": "mm_items",
++      "note": "sub_00077DC0 (the main menu's set-up; the page is its argument, edi = page + 0x14): after the item count (+0x16) is stored as 5, before the list widget sub_000F0EA0 is called. The items are at +0x18 (8 bytes: label, a 'not available' byte, a spare), their scrolling help lines at +0x40, the cursor at +0x14 from the last choice (+4). The PlayStation 5: XBOX LIVE (the fourth line) is taken out, DRIVER DETAILS and its help line move up, the count becomes 4. src/game/menuentry.c."
++    },
++    {
++      "va": "0x00078180",
++      "kind": "mark",
++      "name": "mm_select",
++      "note": "sub_00078160 (the main menu's A): after xor ecx, ecx; eax the cursor, edi the page, about to be stored as the choice (+4, which picks the next page; 3 is XBOX LIVE). The PlayStation 5, with XBOX LIVE taken out: the fourth line is DRIVER DETAILS, so 3 becomes 4. src/game/menuentry.c."
+     }
+   ]
+ }
 diff --git a/src/game/autopilot.c b/src/game/autopilot.c
 index ef49115..41cbb9b 100644
 --- a/src/game/autopilot.c
@@ -50,6 +73,48 @@ index c696deb..bd8c3fa 100644
  extern ptrdiff_t g_xbox_mem_offset;
  
  #define M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
+diff --git a/src/game/install.c b/src/game/install.c
+index dc02b47..a36fd32 100644
+--- a/src/game/install.c
++++ b/src/game/install.c
+@@ -1081,6 +1081,37 @@ int bo3_install_main(int argc, char **argv)
+     return 0;
+ }
+ 
++/* The installer with this program's disc manifest, for a front end of its own
++ * (the PlayStation 5's first start, ps5/src/firstrun.c in that port): source
++ * an image or a folder, the files into <dest>/GAME_DIR and the marker into
++ * <dest>, or with check_only only what the source is. Returns the installer's
++ * code (XR_INSTALL_OK ...) and puts its sentence for the player in message. */
++int bo3_install_from(const char *source, const char *dest, int check_only,
++                     void (*progress)(void *ctx, double fraction, const char *text),
++                     void *ctx, char *message, size_t n)
++{
++    xr_install_opts o;
++    xr_install_result r;
++
++    memset(&o, 0, sizeof o);
++    memset(&r, 0, sizeof r);
++    o.source = source;
++    o.source_fd = -1;
++    o.dest = dest;
++    o.subdir = GAME_DIR;
++    o.manifest = &k_manifest;
++    o.version = BO3_VERSION;
++    o.free_needed = FREE_NEEDED;
++    o.identify_only = check_only;
++    o.ctx = ctx;
++    o.progress = progress;
++    o.log = install_log;
++    xr_install(&o, &r);
++    if (message && n)
++        snprintf(message, n, "%s", r.message);
++    return r.code;
++}
++
+ /* ── Android: the setup page's installer ───────────────────────────── */
+ 
+ #if defined(__ANDROID__)
 diff --git a/src/game/main.c b/src/game/main.c
 index 81f12e2..7f9d9fa 100644
 --- a/src/game/main.c
@@ -119,7 +184,7 @@ index 81f12e2..7f9d9fa 100644
      env_default("RECOMP_APU_DSP_ACK", "0x825F8810");
  #endif
 diff --git a/src/game/menuentry.c b/src/game/menuentry.c
-index facb381..661e35b 100644
+index facb381..40ae767 100644
 --- a/src/game/menuentry.c
 +++ b/src/game/menuentry.c
 @@ -47,7 +47,9 @@
@@ -132,6 +197,66 @@ index facb381..661e35b 100644
  extern ptrdiff_t g_xbox_mem_offset;
  extern void sub_001D2879(void);          /* the title's heap: (size, tag), stdcall */
  
+@@ -195,10 +197,59 @@ static void me_select(void)
+ #endif
+ }
+ 
++/* ── the main menu, without XBOX LIVE (the PlayStation 5) ─────────────
++ *
++ * The main menu (BURNOUT 3 WORLD TOUR, SINGLE EVENT, MULTIPLAYER, XBOX LIVE,
++ * DRIVER DETAILS) is built by sub_00077DC0 into the page it is given: +4
++ * the last choice, +0x14 the cursor, +0x16 the count (5), +0x18 five items
++ * of 8 bytes (label, a "not available" byte the A handler checks, a spare),
++ * +0x40 five scrolling help lines. Xbox Live is gone, and a console has no
++ * use for its line: the "mm_items" mark (after the count is stored, edi the
++ * page + 0x14) moves DRIVER DETAILS and its help line up over it and makes
++ * the count 4. The A handler (sub_00078160) stores the cursor as the choice
++ * the next page is picked by, 3 being XBOX LIVE: the "mm_select" mark
++ * (eax the cursor, edi the page) makes the fourth line's 3 a 4, DRIVER
++ * DETAILS. Coming back, the cursor starts from the last choice: 4 is the
++ * fourth line, 3. */
++#define MM_LIVE   3u
++#define MM_LAST   4u
++static uint32_t s_mm_page;
++
++static void mm_items(void)
++{
++#if defined(__PROSPERO__)
++    uint32_t page = g_edi - 0x14;
++
++    if (!g_xbox_mem_offset || ME_M16(page + 0x16) != MM_LAST + 1)
++        return;
++    ME_M32(page + 0x18 + MM_LIVE * 8) = ME_M32(page + 0x18 + MM_LAST * 8);
++    ME_M32(page + 0x18 + MM_LIVE * 8 + 4) = ME_M32(page + 0x18 + MM_LAST * 8 + 4);
++    ME_M32(page + 0x40 + MM_LIVE * 4) = ME_M32(page + 0x40 + MM_LAST * 4);
++    ME_M16(page + 0x16) = MM_LAST;
++    if (ME_M16(page + 0x14) >= MM_LIVE)
++        ME_M16(page + 0x14) = MM_LIVE;
++    if (s_mm_page != page)
++        fprintf(stderr, "[MENU] main menu: XBOX LIVE taken out (page 0x%08X)\n", page);
++    s_mm_page = page;
++#endif
++}
++
++static void mm_select(void)
++{
++#if defined(__PROSPERO__)
++    if (!g_xbox_mem_offset || g_edi != s_mm_page || ME_M16(g_edi + 0x16) != MM_LAST)
++        return;
++    if (g_eax == MM_LIVE)
++        g_eax = MM_LAST;
++#endif
++}
++
+ void bo3_menu_entry_start(void)
+ {
+     recomp_patch_on_mark("si_items", me_items);
+     recomp_patch_on_mark("si_select", me_select);
+     recomp_patch_on_mark("pe_items", pe_items);
+     recomp_patch_on_mark("pe_select", pe_select);
++    recomp_patch_on_mark("mm_items", mm_items);
++    recomp_patch_on_mark("mm_select", mm_select);
+ }
 diff --git a/src/game/recomp/recomp_manual.c b/src/game/recomp/recomp_manual.c
 index 24198ba..7c0ffba 100644
 --- a/src/game/recomp/recomp_manual.c

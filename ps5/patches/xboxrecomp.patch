@@ -166,6 +166,37 @@ index 3819802..d1c9bd2 100644
          # The SDL pad backend's rumble against a virtual controller: no gap
          # while held, an end by itself, stopped at every exit.
          add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../tests/input_rumble_sdl
+diff --git a/src/install/disc_install.c b/src/install/disc_install.c
+index 7bdf057..13dd4a0 100644
+--- a/src/install/disc_install.c
++++ b/src/install/disc_install.c
+@@ -389,7 +389,14 @@ static int src_open(inst *in, const char *rel, src_file *sf)
+         sf->fp = fopen(path, "rb");
+         if (!sf->fp)
+             return -1;
++        /* FreeBSD's stdio (the PlayStation 5's) refills an unbuffered
++         * stream a byte at a time: a 1 MiB fread became a million reads
++         * there, 0.3 MB/s. A buffer of the chunk's size reads it in one. */
++#if defined(__FreeBSD__)
++        setvbuf(sf->fp, NULL, _IOFBF, CHUNK);
++#else
+         setvbuf(sf->fp, NULL, _IONBF, 0);
++#endif
+     }
+     return 1;
+ }
+@@ -732,7 +739,11 @@ static int verify_in_place(inst *in, const xr_manifest_file *mf, const char *pat
+ 
+     if (!f)
+         return 0;
++#if defined(__FreeBSD__)
++    setvbuf(f, NULL, _IOFBF, CHUNK);    /* see src_open: FreeBSD's unbuffered fread */
++#else
+     setvbuf(f, NULL, _IONBF, 0);
++#endif
+     xr_sha256_init(&sha);
+     while (left) {
+         size_t n = left > CHUNK ? CHUNK : (size_t)left;
 diff --git a/src/kernel/CMakeLists.txt b/src/kernel/CMakeLists.txt
 index 6989a3f..3989b8c 100644
 --- a/src/kernel/CMakeLists.txt
