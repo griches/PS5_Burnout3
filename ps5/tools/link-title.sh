@@ -168,10 +168,16 @@ cp "$param" "$app/sce_sys/param.json"
 # device access faulted on, reads it from this copy instead (ps5/src/codecopy.c).
 # code.txt has the section's link address, then ps5_code_anchor's (the load's displacement).
 "$sdk/bin/llvm-objcopy" -O binary --only-section=.text "$work/link/llvm-pie.elf" "$app/code.bin"
+# (each listing is read whole before it is searched: an awk that stops at the
+# match leaves the lister a SIGPIPE, which pipefail makes a failed link)
+sections=$(llvm-readelf -S --wide "$work/link/llvm-pie.elf")
+symbols=$("$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf")
 {
-    llvm-readelf -S --wide "$work/link/llvm-pie.elf" | awk '$2 == ".text" { print "0x" $4; exit }'
-    "$sdk/bin/llvm-nm" "$work/link/llvm-pie.elf" | awk '$3 == "ps5_code_anchor" { print "0x" $1; exit }'
+    # ("[ 9] .text PROGBITS address": the index may be one field or two)
+    awk '!done { for (i = 1; i + 2 <= NF; i++) if ($i == ".text") { print "0x" $(i + 2); done = 1; break } }' <<<"$sections"
+    awk '$3 == "ps5_code_anchor" && !done { print "0x" $1; done = 1 }' <<<"$symbols"
 } > "$app/code.txt"
+[[ $(wc -l < "$app/code.txt") -eq 2 ]] || { echo "link-title.sh: no .text or ps5_code_anchor for code.txt" >&2; exit 1; }
 for asset in icon0.png pic0.dds pic1.dds snd0.at9; do
     [[ -f $ps5/sce_sys/$asset ]] && cp "$ps5/sce_sys/$asset" "$app/sce_sys/$asset"
 done

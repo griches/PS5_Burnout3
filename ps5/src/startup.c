@@ -27,6 +27,9 @@
 #include <unistd.h>
 
 #include <ps5platform/fp.h>
+#include <ps5platform/memory.h>
+
+#include <pthread.h>
 
 #include "platform.h"
 
@@ -87,6 +90,46 @@ __wrap_main(int argc, char **argv, char **envp)
    return __real_main(count, args, envp);
 }
 
+/* A watchdog: the title's memory every two seconds into klog when it moves by
+ * 64 MiB, and an end to the title before the console itself runs short
+ * (BO3_PS5_MEMORY_FLOOR_MB of direct memory left, default 1024; 96 MiB of
+ * flexible memory). A first run of a new port once took the console's memory
+ * with it and needed a restart. */
+static void *
+memory_guard(void *unused)
+{
+   const char *floor_text = getenv("BO3_PS5_MEMORY_FLOOR_MB");
+   const uint64_t floor = (floor_text ? strtoull(floor_text, NULL, 10) : 1024u) << 20;
+   uint64_t last = 0;
+
+   (void)unused;
+   for (;;) {
+      struct ps5_memory_stats memory;
+      if (ps5_memory_query(&memory)) {
+         const uint64_t used = memory.total_bytes - memory.free_bytes;
+         if (last == 0 || used > last + (64u << 20) || used + (64u << 20) < last) {
+            say("[memory] direct free %llu MiB of %llu, flexible %llu MiB",
+                (unsigned long long)(memory.free_bytes >> 20),
+                (unsigned long long)(memory.total_bytes >> 20),
+                (unsigned long long)(memory.flexible_bytes >> 20));
+            last = used;
+         }
+         if (memory.flexible_bytes != 0 && memory.flexible_bytes < (96u << 20)) {
+            say("[memory] guard: only %llu MiB of flexible memory left, ending the title",
+                (unsigned long long)(memory.flexible_bytes >> 20));
+            _exit(71);
+         }
+         if (memory.free_bytes < floor) {
+            say("[memory] guard: only %llu MiB of direct memory left, ending the title",
+                (unsigned long long)(memory.free_bytes >> 20));
+            _exit(70);
+         }
+      }
+      sleep(2);
+   }
+   return NULL;
+}
+
 __attribute__((constructor)) static void
 ps5_startup(void)
 {
@@ -121,4 +164,8 @@ ps5_startup(void)
       }
       fclose(file);
    }
+
+   pthread_t guard;
+   if (pthread_create(&guard, NULL, memory_guard, NULL) == 0)
+      pthread_detach(guard);
 }
