@@ -473,6 +473,123 @@ index 3113078..c43f7b5 100644
          # Vulkan through android_vk.h's pointers (src/d3d/CMakeLists.txt),
          # Dear ImGui's backend included.
          target_compile_options(xbox_overlay PRIVATE -include ${XR_ANDROID_VK_H})
+diff --git a/src/overlay/overlay_ui.cpp b/src/overlay/overlay_ui.cpp
+index 6c09243..ddc97bf 100644
+--- a/src/overlay/overlay_ui.cpp
++++ b/src/overlay/overlay_ui.cpp
+@@ -177,7 +177,11 @@ static const char *const n_touch[]     = { "Auto (hidden while a controller is u
+ static const char *const n_scale[]     = { "1x (640x480)", "1.5x (960x720)", "2x (1280x960)", "3x", "4x", NULL };
+ #endif
+ static const char *const n_face[]      = { "Xbox layout", "Nintendo layout", NULL };
++#if defined(__PROSPERO__)
++static const char *const n_scheme[]    = { "Original (R2 accelerate, L2 brake)", "PS2 layout", NULL };
++#else
+ static const char *const n_scheme[]    = { "Xbox layout", "PS2 layout", NULL };
++#endif
+ static const char *const n_ui_scale[]  = { "Off", "2x", "4x", NULL };
+ static const char *const n_glyphs[]    = { "Auto (the controller in use)", "Xbox (original)", "Xbox (modern: LB RB LT RT)", "PlayStation (DualShock 3, 4)", "PlayStation 5 (DualSense)", "Nintendo", "Steam (Deck, Steam Controller)", "Positional (any pad)", "Keyboard", NULL };
+ static_assert(sizeof n_glyphs / sizeof n_glyphs[0] == XBOX_GLYPHS_MODE_COUNT + 1, "one name per glyph mode, in pad_glyphs.h order");
+@@ -219,7 +223,11 @@ static const Meta k_meta[XS_COUNT] = {
+     /* XS_INPUT_TRIGGER_DEADZONE */ { "Trigger deadzone", "How far a trigger can be pulled and still count as released.", 13.0, FMT_PERCENT_OF_MAX, NULL, 0 },
+     /* XS_INPUT_RUMBLE */       { "Rumble strength", "1.0 is the original Xbox rumble. Higher strengthens the weaker rumbles; the strongest stays at full. 0 turns rumble off.", 0.25, FMT_GAIN, NULL, 0 },
+     /* XS_INPUT_FACE_LAYOUT */  { "Face buttons", "Nintendo layout is for pads with A on the right and B below. It swaps A with B and X with Y, in the game and here.", 1, FMT_PLAIN, n_face, 0 },
++#if defined(__PROSPERO__)
++    /* XS_INPUT_CONTROL_SCHEME */ { "Driving controls", "PS2 layout uses the PlayStation 2 version's driving controls: accelerate on Cross, brake on Square, boost on R1, look back on L1. Applies only while driving.", 1, FMT_PLAIN, n_scheme, 0 },
++#else
+     /* XS_INPUT_CONTROL_SCHEME */ { "Driving controls", "PS2 layout uses the PlayStation 2 version's driving controls: accelerate on the bottom face button, brake on the left one, boost on the right shoulder, look back on the left shoulder. Applies only while driving.", 1, FMT_PLAIN, n_scheme, 0 },
++#endif
+     /* XS_POWER_MODE */         { "Power mode", "Maximum busy-waits throughout (steadiest, hottest). Balanced sleeps, then spins for the last 8 ms of each frame (steady 60). Battery saver only sleeps (coolest, with an occasional small dip). Auto picks the spin as it goes: less while frames are steady, more when they come late.", 1, FMT_PLAIN, n_power, 0 },
+     /* XS_ADVANCED_PERF */      { "Performance overlay", "FPS and frame-time graph in the corner. Greetings to the DF team!", 1, FMT_PLAIN, NULL, 0 },
+     /* XS_GAME_SPEED_UNITS */   { "Speed units", "Speed and distance in km/h and metres instead of mph and miles, using the game's own metric display. Applies from the next race. Text stays English.", 1, FMT_PLAIN, n_units, 0 },
+@@ -1001,14 +1009,17 @@ static int page_rows(int page, Row *r)
+ #define SPK(a, t) r[n++] = Row{ R_SPEAKERS, XS_COUNT, (a), (t) }
+     switch (page) {
+     case P_DISPLAY:
+-#if !defined(__ANDROID__)
++#if !defined(__ANDROID__) && !defined(__PROSPERO__)
+         /* Android: the game is the whole screen always (immersive); out of
+          * fullscreen SDL brings the system bars back over a smaller window,
+-         * and the touch controls with it. */
++         * and the touch controls with it. The PlayStation 5: the TV, always. */
+         SET(XS_DISPLAY_FULLSCREEN);
+ #endif
+         SET(XS_DISPLAY_ASPECT); SET(XS_DISPLAY_FILTER);
+-        SET(XS_DISPLAY_OVERSCAN); SET(XS_DISPLAY_FIT);
++        SET(XS_DISPLAY_OVERSCAN);
++#if !defined(__PROSPERO__)              /* a 16:10 window's: a TV is 16:9 */
++        SET(XS_DISPLAY_FIT);
++#endif
+ #if defined(__APPLE__)
+         if (!s_vulkan)                 /* the Metal presenter's (BO-115) */
+             SET(XS_DISPLAY_PRESENT_TIMING);
+@@ -1021,8 +1032,10 @@ static int page_rows(int page, Row *r)
+             SET(XS_GAME_SPEED_UNITS);
+         if (recomp_patch_enabled(xbox_SettingGet(XS_DISPLAY_HUD_FIX)->key))
+             SET(XS_DISPLAY_HUD_FIX);
++#if !defined(__PROSPERO__)              /* the PlayStation 5 draws on a 16:9 TV */
+         if (recomp_patch_enabled(xbox_SettingGet(XS_DISPLAY_ULTRAWIDE)->key))
+             SET(XS_DISPLAY_ULTRAWIDE);
++#endif
+         if (recomp_patch_enabled(xbox_SettingGet(XS_DISPLAY_SCORE_BOARD)->key))
+             SET(XS_DISPLAY_SCORE_BOARD);
+         ACT(A_RESET_PAGE, "Reset this page to the defaults");
+@@ -1105,6 +1118,15 @@ static int page_rows(int page, Row *r)
+         }
+         if (s_mf)
+             SET(XS_AUDIO_CUSTOM_LEVEL);
++#if defined(__PROSPERO__)
++        /* The PlayStation 5: stereo out (its SDL audio driver), and no window
++         * to lose: the volume, mute and the game's own options only. */
++        SET(XS_AUDIO_VOLUME); SET(XS_AUDIO_MUTE);
++        if (menusnd_named())
++            SET(XS_AUDIO_MENU_SOUNDS);
++        if (recomp_patch_enabled(xbox_SettingGet(XS_AUDIO_SPLIT_MUSIC)->key))
++            SET(XS_AUDIO_SPLIT_MUSIC);
++#else
+         SET(XS_AUDIO_VOLUME); SET(XS_AUDIO_MUTE); SET(XS_AUDIO_MUTE_BG); SET(XS_AUDIO_SPEAKERS);
+         if (menusnd_named())
+             SET(XS_AUDIO_MENU_SOUNDS);
+@@ -1122,14 +1144,19 @@ static int page_rows(int page, Row *r)
+         SPK(1, "Speaker test, direct");
+         if (mcpx_apu_title_channels() != 6)
+             INFO("The output is stereo: each speaker is folded to left/right.");
++#endif
+         ACT(A_RESET_PAGE, "Reset this page to the defaults");
+         break;
+     case P_INPUT:
+         SET(XS_INPUT_DEADZONE); SET(XS_INPUT_TRIGGER_DEADZONE); SET(XS_INPUT_RUMBLE);
++#if !defined(__PROSPERO__)              /* a DualSense always: its own prompts */
+         SET(XS_INPUT_FACE_LAYOUT);
++#endif
+         if (xbox_InputControlSchemeOffered())
+             SET(XS_INPUT_CONTROL_SCHEME);
++#if !defined(__PROSPERO__)
+         SET(XS_INPUT_GLYPHS);
++#endif
+ #if defined(__ANDROID__)
+         SET(XS_INPUT_VIBRATION);
+         SET(XS_INPUT_TOUCH);
+@@ -1140,7 +1167,7 @@ static int page_rows(int page, Row *r)
+         ACT(A_RESET_PAGE, "Reset this page to the defaults");
+         break;
+     case P_POWER:
+-#if !defined(__linux__)
++#if !defined(__linux__) && !defined(__PROSPERO__)
+         {
+             /* The note names the default this build has: the title's own
+              * choice (xbox_SettingsGameDefault), Balanced where it takes the
+@@ -3964,7 +3991,11 @@ static void draw_header(ImDrawList *dl)
+             key_cap(dl, right - w1 - gap - w2, cy, LY.foot, "Q", c);
+             key_cap(dl, right - w2, cy, LY.foot, "E", c);
+         } else {
++#if defined(__PROSPERO__)
++            const char *hint = pad_hints() ? "L1 / R1" : "Q / E";
++#else
+             const char *hint = pad_hints() ? "LB / RB" : "Q / E";
++#endif
+             const float hw = tw(LY.foot, hint);
+             txt(dl, LY.foot, ImVec2(right - hw, top_for(cy, LY.foot)), col(T->hint), hint);
+         }
 diff --git a/src/platform/mmio_decode.h b/src/platform/mmio_decode.h
 index fc4fa39..252d157 100644
 --- a/src/platform/mmio_decode.h
