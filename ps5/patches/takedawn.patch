@@ -116,7 +116,7 @@ index dc02b47..a36fd32 100644
  
  #if defined(__ANDROID__)
 diff --git a/src/game/main.c b/src/game/main.c
-index 81f12e2..7f9d9fa 100644
+index 81f12e2..6b07154 100644
 --- a/src/game/main.c
 +++ b/src/game/main.c
 @@ -107,9 +107,11 @@ extern void xbox_InputPanicStop(int wait_ms);
@@ -131,7 +131,20 @@ index 81f12e2..7f9d9fa 100644
  extern ptrdiff_t g_xbox_mem_offset;
  
  extern void xbe_entry_point(void);
-@@ -3137,7 +3139,33 @@ int main(int argc, char **argv)
+@@ -2712,7 +2714,11 @@ int main(int argc, char **argv)
+         for (i = 1; i < argc; i++)
+             if (!strcmp(argv[i], "--headless"))
+                 hl = 1;
+-#if defined(BO3_RELEASE_BUILD)
++        /* The PlayStation 5 is quiet as a release is, without BO3_RELEASE_BUILD:
++         * that also brings the desktop's first-start picture, whose
++         * env_default calls would become the overlay's Reset values. Every
++         * diagnostic line goes to klog, which costs frames in a race. */
++#if defined(BO3_RELEASE_BUILD) || defined(__PROSPERO__)
+         xr_log_init(1, hl);
+ #else
+         xr_log_init(0, hl);
+@@ -3137,7 +3143,32 @@ int main(int argc, char **argv)
      /* The title draws 448 lines (clip y=16..464) into its 640x480 buffer and
       * leaves the rest black, for a TV's overscan to hide; show the picture
       * the way that TV did (Metal and Vulkan presenters). */
@@ -140,11 +153,12 @@ index 81f12e2..7f9d9fa 100644
 +    env_default("RECOMP_PRESENT_OVERSCAN", "off");
 +    /* The PlayStation 5's first start, as the port's owner set it on his
 +     * console (2026-10-20): 16:9 with the HUD fix, 4x inside (2560x1920),
-+     * FXAA with light sharpening, half the game's motion blur, 60 fps crash
-+     * cameras and split screen, texture sharpness following the scale,
-+     * vehicles at the farthest detail distance and scenery far. Defaults
-+     * like the others: a settings.toml that names a value keeps it, and the
-+     * overlay's Reset comes back here. */
++     * FXAA with light sharpening, half the game's motion blur, texture
++     * sharpness following the scale, vehicles at the farthest detail
++     * distance and scenery far. Crash cameras and split screen stay at the
++     * title's 30 fps, as shipped (his choice, 2026-10-22). Defaults like the
++     * others: a settings.toml that names a value keeps it, and the overlay's
++     * Reset comes back here. */
 +    env_default("RECOMP_PRESENT_FULLSCREEN", "1");
 +    env_default("RECOMP_DISPLAY_WIDESCREEN", "1");
 +    env_default("RECOMP_GFX_HUD_FIX", "1");
@@ -153,8 +167,6 @@ index 81f12e2..7f9d9fa 100644
 +    env_default("RECOMP_GFX_AA", "fxaa");
 +    env_default("RECOMP_GFX_SHARPEN", "0.1");
 +    env_default("RECOMP_GFX_MOTION_BLUR", "0.5");
-+    env_default("RECOMP_GFX_CRASH_60FPS", "1");
-+    env_default("RECOMP_GFX_SPLIT_60FPS", "1");
 +    env_default("RECOMP_GFX_LOD_BIAS", "auto");
 +    env_default("RECOMP_GFX_VEHICLE_DETAIL", "farthest");
 +    env_default("RECOMP_GFX_SCENERY_DETAIL", "far");
@@ -165,7 +177,7 @@ index 81f12e2..7f9d9fa 100644
  #if !defined(__ANDROID__)
      /* The picture of a first start (BO-103). These are defaults like the
       * others: a settings.toml that names a value keeps it, a RECOMP_*
-@@ -3279,9 +3307,17 @@ int main(int argc, char **argv)
+@@ -3279,9 +3310,17 @@ int main(int argc, char **argv)
       * a util clamp does nothing on amd-pstate-epp). A steady 60 in races
       * at about 10 W, against 14 W spinning throughout. */
      env_default("RECOMP_VBLANK_SYNC", "display");

@@ -6,9 +6,8 @@
 
 A PlayStation 5 port of [Takedawn](https://github.com/xenophobentx/takedawn), the
 static recompilation of the original Xbox *Burnout 3: Takedown* by xenophobentx.
-The 2004 game runs natively on the console: 4x resolution, widescreen with an
-undistorted HUD, 60 fps crash cameras and split screen, and Takedawn's settings
-menu, at 60 fps.
+The 2004 game runs natively on the console at 60 fps: 4x resolution, widescreen
+with an undistorted HUD, and Takedawn's settings menu.
 
 > [!IMPORTANT]
 > You need your own disc image of the **North America (USA) Xbox** release of
@@ -71,9 +70,11 @@ brake to Square, boost to R1 and look back to L1.
 
 The PS5 starts with: 16:9 with the widescreen HUD fix, 4x render scale
 (2560x1920 inside), FXAA with light sharpening, half the original motion blur,
-60 fps crash cameras and split screen, texture sharpness following the render
-scale, vehicles at their farthest detail distance, scenery far, and the
-Maximum power mode (steadiest frame times). Change any of them in the settings
+texture sharpness following the render scale, vehicles at their farthest detail
+distance, scenery far, and the Maximum power mode (steadiest frame times). Crash
+cameras and split screen run at the game's own 30 fps: "60 fps crash cameras"
+and "60 fps split screen" in the settings menu run them at 60, but the game
+slows down wherever the console can't hold it. Change any of them in the settings
 menu. A few, render scale among them, take effect the next time the game
 starts: close it from the home screen and start it again.
 
